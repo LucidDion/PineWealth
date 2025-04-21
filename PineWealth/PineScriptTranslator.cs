@@ -151,25 +151,24 @@ namespace WealthLab.Backtest
                         if (tokensAfter[0] == "ta" && tokensAfter[1] == ".")
                         {
                             recurse++;
-                            List<List<string>> indParams = ExtractParameterTokens(tokensAfter);
+                            indParams = ExtractParameterTokens(tokensAfter);
                             switch (tokensAfter[2])
                             {
-                                //DKK refactor
                                 case "bb":
                                     string upperVar = tokens[1];
-                                    InjectIndicator(upperVar, "BBUpper", ConvertTokens(indParams[0]), ConvertTokens(indParams[1]), ConvertTokens(indParams[2]));
+                                    InjectIndicator(upperVar, "BBUpper", 0, 1, 2);
                                     string baselineVar = tokens[3];
-                                    InjectIndicator(baselineVar, "SMA", ConvertTokens(indParams[0]), ConvertTokens(indParams[1]));
+                                    InjectIndicator(baselineVar, "SMA", 0, 1);
                                     string lowerVar = tokens[5];
-                                    InjectIndicator(lowerVar, "BBLower", ConvertTokens(indParams[0]), ConvertTokens(indParams[1]), ConvertTokens(indParams[2]));
+                                    InjectIndicator(lowerVar, "BBLower", 0, 1, 2);
                                     break;
                                 case "macd":
                                     string macdVar = tokens[1];
-                                    InjectIndicator(macdVar, "MACD", ConvertTokens(indParams[0]), ConvertTokens(indParams[1]), ConvertTokens(indParams[2]));
+                                    InjectIndicator(macdVar, "MACD", 0, 1, 2);
                                     string signalVar = tokens[3];
-                                    InjectIndicator(signalVar, "EMA", macdVar, ConvertTokens(indParams[3]));
+                                    InjectIndicator(signalVar, "EMA", macdVar, 3);
                                     string histVar = tokens[5];
-                                    InjectIndicator(histVar, "MACDHist", ConvertTokens(indParams[0]), ConvertTokens(indParams[1]), ConvertTokens(indParams[2]), ConvertTokens(indParams[3]));
+                                    InjectIndicator(histVar, "MACDHist", 0, 1, 2, 3);
                                     break;
                             }
                             recurse--;
@@ -587,7 +586,7 @@ namespace WealthLab.Backtest
         }
 
         //inject an indicator - that was the result of a tuple assignment in PineScript
-        private void InjectIndicator(string varName, string indName, params string[] arguments)
+        private void InjectIndicator(string varName, string indName, params object[] arguments)
         {
             //ignore underscore outputs
             if (varName == "_")
@@ -604,7 +603,15 @@ namespace WealthLab.Backtest
             string indCreate = varName + " = " + indName + ".Series(";
             for(int n = 0; n  < arguments.Length; n++)
             {
-                indCreate += arguments[n];
+                object obj = arguments[n];
+                if (obj is string)
+                    indCreate += (string)obj;
+                else
+                {
+                    int pIdx = (int)arguments[n];
+                    string paramText = ConvertTokens(indParams[pIdx]);
+                    indCreate += paramText;
+                }
                 if (n != arguments.Length - 1)
                     indCreate = indCreate.TrimEnd() + ", ";
             }
@@ -623,6 +630,7 @@ namespace WealthLab.Backtest
         private List<string> varDecl = new List<string>();
         private List<string> timeSeriesVars = new List<string>();
         private static List<string> ohclv = new List<string>() { "open", "high", "low", "close", "volume" };
+        List<List<string>> indParams;
         private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" } };
     }
 }
