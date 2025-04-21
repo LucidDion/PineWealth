@@ -154,6 +154,7 @@ namespace WealthLab.Backtest
                             List<List<string>> indParams = ExtractParameterTokens(tokensAfter);
                             switch (tokensAfter[2])
                             {
+                                //DKK refactor
                                 case "bb":
                                     string upperVar = tokens[1];
                                     InjectIndicator(upperVar, "BBUpper", ConvertTokens(indParams[0]), ConvertTokens(indParams[1]), ConvertTokens(indParams[2]));
@@ -162,9 +163,13 @@ namespace WealthLab.Backtest
                                     string lowerVar = tokens[5];
                                     InjectIndicator(lowerVar, "BBLower", ConvertTokens(indParams[0]), ConvertTokens(indParams[1]), ConvertTokens(indParams[2]));
                                     break;
-                                case "stoch":
-                                    break;
                                 case "macd":
+                                    string macdVar = tokens[1];
+                                    InjectIndicator(macdVar, "MACD", ConvertTokens(indParams[0]), ConvertTokens(indParams[1]), ConvertTokens(indParams[2]));
+                                    string signalVar = tokens[3];
+                                    InjectIndicator(signalVar, "EMA", macdVar, ConvertTokens(indParams[3]));
+                                    string histVar = tokens[5];
+                                    InjectIndicator(histVar, "MACDHist", ConvertTokens(indParams[0]), ConvertTokens(indParams[1]), ConvertTokens(indParams[2]), ConvertTokens(indParams[3]));
                                     break;
                             }
                             recurse--;
