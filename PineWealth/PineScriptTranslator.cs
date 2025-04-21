@@ -155,20 +155,34 @@ namespace WealthLab.Backtest
                             switch (tokensAfter[2])
                             {
                                 case "bb":
-                                    string upperVar = tokens[1];
-                                    InjectIndicator(upperVar, "BBUpper", 0, 1, 2);
-                                    string baselineVar = tokens[3];
-                                    InjectIndicator(baselineVar, "SMA", 0, 1);
-                                    string lowerVar = tokens[5];
-                                    InjectIndicator(lowerVar, "BBLower", 0, 1, 2);
+                                    {
+                                        string upperVar = tokens[1];
+                                        InjectIndicator(upperVar, "BBUpper", 0, 1, 2);
+                                        string baselineVar = tokens[3];
+                                        InjectIndicator(baselineVar, "SMA", 0, 1);
+                                        string lowerVar = tokens[5];
+                                        InjectIndicator(lowerVar, "BBLower", 0, 1, 2);
+                                    }
+                                    break;
+                                case "kc":
+                                    {
+                                        string upperKC = tokens[1];
+                                        InjectIndicator(upperKC, "KeltnerUpper", "bars", 1, 2);
+                                        string basisKC = tokens[3];
+                                        InjectIndicator(basisKC, "EMA", 0, 1);
+                                        string lowerKC = tokens[5];
+                                        InjectIndicator(lowerKC, "KeltnerLower", "bars", 1, 2);
+                                    }
                                     break;
                                 case "macd":
-                                    string macdVar = tokens[1];
-                                    InjectIndicator(macdVar, "MACD", 0, 1, 2);
-                                    string signalVar = tokens[3];
-                                    InjectIndicator(signalVar, "EMA", macdVar, 3);
-                                    string histVar = tokens[5];
-                                    InjectIndicator(histVar, "MACDHist", 0, 1, 2, 3);
+                                    {
+                                        string macdVar = tokens[1];
+                                        InjectIndicator(macdVar, "MACD", 0, 1, 2);
+                                        string signalVar = tokens[3];
+                                        InjectIndicator(signalVar, "EMA", macdVar, 3);
+                                        string histVar = tokens[5];
+                                        InjectIndicator(histVar, "MACDHist", 0, 1, 2, 3);
+                                    }
                                     break;
                             }
                             recurse--;
