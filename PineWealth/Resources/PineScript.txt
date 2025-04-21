@@ -1,0 +1,14 @@
+//@version=4
+strategy("RSI Overbought/Oversold", overlay=true)
+
+x = 20
+rsi = ta.rsi(close, 14)
+[middle, upper, lower] = ta.bb(close, 20, 20)
+
+if (rsi > 70)
+    strategy.entry("Short", strategy.short)
+    x++
+
+if (rsi < 30)
+    strategy.entry("Long", strategy.long)
+    x--

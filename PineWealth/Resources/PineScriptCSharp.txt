@@ -1,0 +1,27 @@
+using WealthLab.Backtest;
+using System;
+using WealthLab.Core;
+using WealthLab.Data;
+using WealthLab.Indicators;
+using System.Collections.Generic;
+
+namespace WealthScript1 
+{
+   public class MyStrategy : UserStrategyBase
+   {
+      //create indicators and other objects here, this is executed prior to the main trading loop
+      public override void Initialize(BarHistory bars)
+      {
+<#Initialize>
+      }
+       
+      //execute the strategy rules here, this is executed once for each bar in the backtest history
+      public override void Execute(BarHistory bars, int idx)
+      {
+<#Execute>
+      }
+       
+      //declare private variables below
+<#VarDecl>
+   }
+}

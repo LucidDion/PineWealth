@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.8.34525.116
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PineWealth", "PineWealth\PineWealth.csproj", "{C5BA4C21-BDB5-4598-A483-921FCAA2F1EE}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C5BA4C21-BDB5-4598-A483-921FCAA2F1EE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C5BA4C21-BDB5-4598-A483-921FCAA2F1EE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C5BA4C21-BDB5-4598-A483-921FCAA2F1EE}.Debug|x64.ActiveCfg = Debug|x64
+		{C5BA4C21-BDB5-4598-A483-921FCAA2F1EE}.Debug|x64.Build.0 = Debug|x64
+		{C5BA4C21-BDB5-4598-A483-921FCAA2F1EE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C5BA4C21-BDB5-4598-A483-921FCAA2F1EE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C5BA4C21-BDB5-4598-A483-921FCAA2F1EE}.Release|x64.ActiveCfg = Release|x64
+		{C5BA4C21-BDB5-4598-A483-921FCAA2F1EE}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {5F54E110-D272-42F6-9741-8FEE38AC2AE0}
+	EndGlobalSection
+EndGlobal
