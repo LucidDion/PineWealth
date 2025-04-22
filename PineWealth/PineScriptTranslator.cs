@@ -239,8 +239,57 @@ namespace WealthLab.Backtest
                         }
                         else
                         {
-                            //assume float
-                            varType = "double";
+                            //see if it's a mathematical operation, and if so does it involve series?
+                            List<string> tokensAfter = GetTokensAfter("=", tokens);
+                            bool isMath = false;
+                            foreach(string tokenOp in tokensAfter)
+                                if (mathOps.Contains(tokenOp))
+                                {
+                                    isMath = true;
+                                    break;
+                                }
+                            if (isMath)
+                            {
+                                //determine if any of the terms are series
+                                bool hasSeriesTerm = false;
+                                for(int ta = 0; ta < tokensAfter.Count; ta++)
+                                {
+                                    string ta0 = tokensAfter[ta];
+                                    string ta1 = ta + 1 < tokensAfter.Count ? tokensAfter[ta + 1] : null;
+                                    if (ohclv.Contains(ta0))
+                                        hasSeriesTerm = true;
+                                    else if (ta0 == "ta" && ta1 == ".")
+                                        hasSeriesTerm = true;
+                                    if (hasSeriesTerm)
+                                        break;
+                                }
+
+                                if (hasSeriesTerm)
+                                {
+                                    //TimeSeries
+                                    varType = "TimeSeries";
+
+                                    //process remainder of tokens and put in initialize
+                                    string decl = "private " + varType + " " + varName + ";";
+                                    AddToVarDecl(decl);
+                                    recurse++;
+                                    string statement = varName + " = " + ConvertTokens(tokensAfter) + " ;";
+                                    recurse--;
+                                    AddToInitializeMethod(statement);
+                                    outTokens.Clear();
+                                    break;
+                                }
+                                else
+                                {
+                                    //assume float
+                                    varType = "double";
+                                }
+                            }
+                            else
+                            {
+                                //assume float
+                                varType = "double";
+                            }
                         }
                     }
                 }
@@ -395,7 +444,7 @@ namespace WealthLab.Backtest
                 string execOut = "";
                 foreach (string ot in outTokens)
                     execOut += ot + " ";
-                if (indicatorMapped)
+                if (indicatorMapped && execOut.Contains("="))
                     AddToInitializeMethod(execOut.Trim());
 
                 //did we declare a variable?
@@ -711,6 +760,7 @@ namespace WealthLab.Backtest
         private List<string> timeSeriesVars = new List<string>();
         private List<string> usingClauses = new List<string>();
         private static List<string> ohclv = new List<string>() { "open", "high", "low", "close", "volume" };
+        private static List<string> mathOps = new List<string>() { "+", "-", "*", "/" };
         List<List<string>> indParams;
         private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" }, { "barssince", "BarsSince" },
             { "bbw", "BBWidth" }, { "cci", "CCI" } };
