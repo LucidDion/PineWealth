@@ -9,8 +9,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="WealthLab.AdvancedSmoothers">
+      <HintPath>..\..\..\..\..\..\Program Files\Quantacula, LLC\WealthLab 8\WealthLab.AdvancedSmoothers.dll</HintPath>
+    </Reference>
     <Reference Include="WealthLab.Core">
       <HintPath>..\..\..\..\..\..\Program Files\Quantacula, LLC\WealthLab 8\WealthLab.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="WealthLab.IchimokuCloud">
+      <HintPath>..\..\..\..\..\..\Program Files\Quantacula, LLC\WealthLab 8\WealthLab.IchimokuCloud.dll</HintPath>
     </Reference>
   </ItemGroup>
 

@@ -1,5 +1,4 @@
-﻿using System.Runtime.CompilerServices;
-using System.Text;
+﻿using System.Text;
 using WealthLab.Core;
 
 namespace WealthLab.Backtest
@@ -105,6 +104,8 @@ namespace WealthLab.Backtest
             boilerPlate = boilerPlate.Replace("<#Initialize>", init);
             string exec = executeBody.ToStringNewLines();
             boilerPlate = boilerPlate.Replace("<#Execute>", exec);
+            string usings = usingClauses.ToStringNewLines();
+            boilerPlate = boilerPlate.Replace("<#Using>", usings);
 
             return boilerPlate;
         }
@@ -162,6 +163,29 @@ namespace WealthLab.Backtest
                                         InjectIndicator(baselineVar, "SMA", 0, 1);
                                         string lowerVar = tokens[5];
                                         InjectIndicator(lowerVar, "BBLower", 0, 1, 2);
+                                    }
+                                    break;
+                                case "dc":
+                                    {
+                                        string upperDC = tokens[1];
+                                        InjectIndicator(upperDC, "Highest", 0, 2);
+                                        string lowerDC = tokens[3];
+                                        InjectIndicator(lowerDC, "Lowest", 1, 2);
+                                    }
+                                    break;
+                                case "ichimoku":
+                                    {
+                                        AddToUsing("WealthLab.IchimokuCloud");
+                                        string tenkan = tokens[1];
+                                        InjectIndicator(tenkan, "TenkanSen", "bars", 2);
+                                        string kijun = tokens[3];
+                                        InjectIndicator(kijun, "KijunSen", "bars", 3);
+                                        string senkouA = tokens[5];
+                                        InjectIndicator(senkouA, "SenkouSpanA", "bars", 2, 3, 5);
+                                        string senkouB = tokens[5];
+                                        InjectIndicator(senkouB, "SenkouSpanB", "bars", 2, 3, 5);
+                                        string chikou = tokens[7];
+                                        InjectIndicator(chikou, "ChikouSpan", "bars", 4);
                                     }
                                     break;
                                 case "kc":
@@ -240,7 +264,41 @@ namespace WealthLab.Backtest
                         varType = wlInd;
                     }
                     else
-                        throw new ArgumentException("Could not find matching WL indicator for " + token);
+                    {
+                        //special indicator handlers
+                        bool handled = false;
+                        List<string> tokensAfter = GetTokensAfter("=", tokens);
+                        if (tokensAfter[0] == "ta" && tokensAfter[1] == ".")
+                        {
+                            recurse++;
+                            indParams = ExtractParameterTokens(tokensAfter);
+                            switch (tokensAfter[2])
+                            {
+                                case "alma":
+                                    {
+                                        handled = true;
+                                        AddToUsing("WealthLab.AdvancedSmoothers");
+                                        InjectIndicator(varName, "ALMA", 0, 1, 3, 2, "0");
+                                    }
+                                    break;
+                                case "atr":
+                                    {
+                                        handled = true;
+                                        InjectIndicator(varName, "ATR", "bars", 0);
+                                    }
+                                    break;
+                            }
+                            recurse--;
+                        }
+                        if (!handled)
+                            throw new ArgumentException("Could not find matching WL indicator for " + token);
+                        else
+                        {
+                            outTokens.Clear();
+                            indicatorMapped = true;
+                            break; //completes line processing
+                        }
+                    }
                 }
                 else if (token == "(")
                 {
@@ -545,6 +603,14 @@ namespace WealthLab.Backtest
             executeBody.Add(line);
         }
 
+        //add to the using clause
+        private void AddToUsing(string line)
+        {
+            string uc = "using " + line + ";";
+            if (!usingClauses.Contains(uc))
+                usingClauses.Add(uc);
+        }
+
         //given a list of tokens, extract lists that represent a list of parameters, ie (P1, P2, P3) would return three lists of tokens
         private List<List<string>> ExtractParameterTokens(List<string> tokens)
         {
@@ -643,8 +709,10 @@ namespace WealthLab.Backtest
         private List<string> executeBody = new List<string>();
         private List<string> varDecl = new List<string>();
         private List<string> timeSeriesVars = new List<string>();
+        private List<string> usingClauses = new List<string>();
         private static List<string> ohclv = new List<string>() { "open", "high", "low", "close", "volume" };
         List<List<string>> indParams;
-        private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" } };
+        private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" }, { "barssince", "BarsSince" },
+            { "bbw", "BBWidth" }, { "cci", "CCI" } };
     }
 }

@@ -4,6 +4,7 @@ using WealthLab.Core;
 using WealthLab.Data;
 using WealthLab.Indicators;
 using System.Collections.Generic;
+<#Using>
 
 namespace WealthScript1 
 {
