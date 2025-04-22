@@ -763,6 +763,6 @@ namespace WealthLab.Backtest
         private static List<string> mathOps = new List<string>() { "+", "-", "*", "/" };
         List<List<string>> indParams;
         private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" }, { "barssince", "BarsSince" },
-            { "bbw", "BBWidth" }, { "cci", "CCI" } };
+            { "bbw", "BBWidth" }, { "cci", "CCI" }, { "cmo", "CMO" }, { "cog", "CG" }, { "correlation", "Corr" } };
     }
 }
