@@ -336,6 +336,32 @@ namespace WealthLab.Backtest
                                         InjectIndicator(varName, "ATR", "bars", 0);
                                     }
                                     break;
+                                case "correlation":
+                                    {
+                                        handled = true;
+                                        InjectIndicator(varName, "Corr", 0, 1, 2);
+                                    }
+                                    break;
+                                case "crossover":
+                                    {
+                                        handled = true;
+                                        DeclareVar(varName, "TimeSeries");
+                                        string p1 = ConvertTokens(indParams[0]);
+                                        string p2 = ConvertTokens(indParams[1]);
+                                        string s = varName + " = " + p1.Trim() + ".CrossOver(" + p2 + ");";
+                                        AddToInitializeMethod(s);
+                                    }
+                                    break;
+                                case "crossunder":
+                                    {
+                                        handled = true;
+                                        DeclareVar(varName, "TimeSeries");
+                                        string p1 = ConvertTokens(indParams[0]);
+                                        string p2 = ConvertTokens(indParams[1]);
+                                        string s = varName + " = " + p1 + ".CrossUnder(" + p2 + ");";
+                                        AddToInitializeMethod(s);
+                                    }
+                                    break;
                             }
                             recurse--;
                         }
@@ -421,7 +447,7 @@ namespace WealthLab.Backtest
                     break; //stop token processing on this line
                 }
                 //needs time series index?
-                else if (timeSeriesVars.Contains(token))
+                else if (timeSeriesVars.Contains(token) && recurse == 0 && !indicatorMapped)
                 {
                     outTokens.Add(token + "[idx]");
                 }
@@ -722,11 +748,7 @@ namespace WealthLab.Backtest
                 return;
 
             //ensure the variable is defined
-            if (!varDecl.Contains(varName))
-            {
-                string vd = "private " + indName + " " + varName + ";";
-                AddToVarDecl(vd);
-            }
+            DeclareVar(varName, indName);
 
             //create it in initialize
             string indCreate = varName + " = " + indName + ".Series(";
@@ -746,6 +768,16 @@ namespace WealthLab.Backtest
             }
             indCreate += ");";
             AddToInitializeMethod(indCreate);
+        }
+
+        //declare a variable
+        private void DeclareVar(string varName, string varType)
+        {
+            if (!varDecl.Contains(varName))
+            {
+                string vd = "private " + varType + " " + varName + ";";
+                AddToVarDecl(vd);
+            }
         }
 
         //variables
