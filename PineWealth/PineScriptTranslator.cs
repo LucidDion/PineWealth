@@ -411,6 +411,28 @@ namespace WealthLab.Backtest
                                         AddToInitializeMethod(s);
                                     }
                                     break;
+                                case "highest":
+                                    {
+                                        handled = true;
+
+                                        //can have one or two parameters
+                                        if (indParams.Count == 1)
+                                            InjectIndicator(varName, "Highest", "bars.High", 0);
+                                        else
+                                            InjectIndicator(varName, "Highest", 0, 1);
+                                    }
+                                    break;
+                                case "lowest":
+                                    {
+                                        handled = true;
+
+                                        //can have one or two parameters
+                                        if (indParams.Count == 1)
+                                            InjectIndicator(varName, "Lowest", "bars.Low", 0);
+                                        else
+                                            InjectIndicator(varName, "Lowest", 0, 1);
+                                    }
+                                    break;
                             }
                             recurse--;
                         }
