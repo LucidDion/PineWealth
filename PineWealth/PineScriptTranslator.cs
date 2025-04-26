@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Security.Cryptography;
+using System.Text;
 using WealthLab.Core;
 
 namespace WealthLab.Backtest
@@ -431,6 +432,44 @@ namespace WealthLab.Backtest
                                             InjectIndicator(varName, "Lowest", "bars.Low", 0);
                                         else
                                             InjectIndicator(varName, "Lowest", 0, 1);
+                                    }
+                                    break;
+                                case "highestbars":
+                                    {
+                                        handled = true;
+                                        DeclareVar(varName, "TimeSeries");
+                                        string p1 = ConvertTokens(indParams[0]);
+
+                                        //can have one or two parameters
+                                        if (indParams.Count == 1)
+                                        {
+                                            string s = varName + " = bars.High.HighestBars(" + p1 + ");";
+                                            AddToInitializeMethod(s);
+                                        }
+                                        else
+                                        {
+                                            string p2 = ConvertTokens(indParams[1]);
+                                            string s = varName + " = " + p1.Trim() + ".HighestBars(" + p2 + ");";
+                                            AddToInitializeMethod(s);
+                                        }
+                                    }
+                                    break;
+                                case "lowestbars":
+                                    handled = true;
+                                    DeclareVar(varName, "TimeSeries");
+                                    string p1 = ConvertTokens(indParams[0]);
+
+                                    //can have one or two parameters
+                                    if (indParams.Count == 1)
+                                    {
+                                        string s = varName + " = bars.Low.LowestBars(" + p1 + ");";
+                                        AddToInitializeMethod(s);
+                                    }
+                                    else
+                                    {
+                                        string p2 = ConvertTokens(indParams[1]);
+                                        string s = varName + " = " + p1.Trim() + ".LowestBars(" + p2 + ");";
+                                        AddToInitializeMethod(s);
                                     }
                                     break;
                             }
