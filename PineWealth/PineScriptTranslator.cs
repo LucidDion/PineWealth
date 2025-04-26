@@ -208,6 +208,16 @@ namespace WealthLab.Backtest
                                         InjectIndicator(histVar, "MACDHist", 0, 1, 2, 3);
                                     }
                                     break;
+                                case "dmi":
+                                    {
+                                        string diplusVar = tokens[1];
+                                        InjectIndicator(diplusVar, "DIPlus", "bars", 0);
+                                        string diminusVar = tokens[3];
+                                        InjectIndicator(diminusVar, "DIMinus", "bars", 0);
+                                        string adxVar = tokens[5];
+                                        InjectIndicator(adxVar, "ADX", "bars", 1);
+                                    }
+                                    break;
                             }
                             recurse--;
                             break; //this completes processing of this line
@@ -369,6 +379,15 @@ namespace WealthLab.Backtest
                                         string p1 = ConvertTokens(indParams[0]);
                                         string p2 = ConvertTokens(indParams[1]);
                                         string s = varName + " = " + p1.Trim() + ".CrossOver(" + p2 + ") || " + p1.Trim() + ".CrossUnder(" + p2 + ");";
+                                        AddToInitializeMethod(s);
+                                    }
+                                    break;
+                                case "cum":
+                                    {
+                                        handled = true;
+                                        DeclareVar(varName, "TimeSeries");
+                                        string p1 = ConvertTokens(indParams[0]);
+                                        string s = varName + " = " + p1.Trim() + ".Sum();";
                                         AddToInitializeMethod(s);
                                     }
                                     break;
@@ -805,6 +824,6 @@ namespace WealthLab.Backtest
         private static List<string> mathOps = new List<string>() { "+", "-", "*", "/" };
         List<List<string>> indParams;
         private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" }, { "barssince", "BarsSince" },
-            { "bbw", "BBWidth" }, { "cci", "CCI" }, { "cmo", "CMO" }, { "cog", "CG" }, { "correlation", "Corr" } };
+            { "bbw", "BBWidth" }, { "cci", "CCI" }, { "cmo", "CMO" }, { "cog", "CG" }, { "correlation", "Corr" }, { "dev", "Dev" } };
     }
 }
