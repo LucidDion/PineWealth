@@ -391,6 +391,26 @@ namespace WealthLab.Backtest
                                         AddToInitializeMethod(s);
                                     }
                                     break;
+                                case "falling":
+                                    {
+                                        handled = true;
+                                        DeclareVar(varName, "TimeSeries");
+                                        string p1 = ConvertTokens(indParams[0]);
+                                        string p2 = ConvertTokens(indParams[1]);
+                                        string s = varName + " = " + p1 + " < " + p1 + " >> " + p2 + ";";
+                                        AddToInitializeMethod(s);
+                                    }
+                                    break;
+                                case "rising":
+                                    {
+                                        handled = true;
+                                        DeclareVar(varName, "TimeSeries");
+                                        string p1 = ConvertTokens(indParams[0]);
+                                        string p2 = ConvertTokens(indParams[1]);
+                                        string s = varName + " = " + p1 + " > " + p1 + " >> " + p2 + ";";
+                                        AddToInitializeMethod(s);
+                                    }
+                                    break;
                             }
                             recurse--;
                         }
