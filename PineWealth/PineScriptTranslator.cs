@@ -358,7 +358,17 @@ namespace WealthLab.Backtest
                                         DeclareVar(varName, "TimeSeries");
                                         string p1 = ConvertTokens(indParams[0]);
                                         string p2 = ConvertTokens(indParams[1]);
-                                        string s = varName + " = " + p1 + ".CrossUnder(" + p2 + ");";
+                                        string s = varName + " = " + p1.Trim() + ".CrossUnder(" + p2 + ");";
+                                        AddToInitializeMethod(s);
+                                    }
+                                    break;
+                                case "cross":
+                                    {
+                                        handled = true;
+                                        DeclareVar(varName, "TimeSeries");
+                                        string p1 = ConvertTokens(indParams[0]);
+                                        string p2 = ConvertTokens(indParams[1]);
+                                        string s = varName + " = " + p1.Trim() + ".CrossOver(" + p2 + ") || " + p1.Trim() + ".CrossUnder(" + p2 + ");";
                                         AddToInitializeMethod(s);
                                     }
                                     break;
