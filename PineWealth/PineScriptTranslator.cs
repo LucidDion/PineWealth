@@ -455,21 +455,30 @@ namespace WealthLab.Backtest
                                     }
                                     break;
                                 case "lowestbars":
-                                    handled = true;
-                                    DeclareVar(varName, "TimeSeries");
-                                    string p1 = ConvertTokens(indParams[0]);
+                                    {
+                                        handled = true;
+                                        DeclareVar(varName, "TimeSeries");
+                                        string p1 = ConvertTokens(indParams[0]);
 
-                                    //can have one or two parameters
-                                    if (indParams.Count == 1)
-                                    {
-                                        string s = varName + " = bars.Low.LowestBars(" + p1 + ");";
-                                        AddToInitializeMethod(s);
+                                        //can have one or two parameters
+                                        if (indParams.Count == 1)
+                                        {
+                                            string s = varName + " = bars.Low.LowestBars(" + p1 + ");";
+                                            AddToInitializeMethod(s);
+                                        }
+                                        else
+                                        {
+                                            string p2 = ConvertTokens(indParams[1]);
+                                            string s = varName + " = " + p1.Trim() + ".LowestBars(" + p2 + ");";
+                                            AddToInitializeMethod(s);
+                                        }
                                     }
-                                    else
+                                    break;
+                                case "hma":
                                     {
-                                        string p2 = ConvertTokens(indParams[1]);
-                                        string s = varName + " = " + p1.Trim() + ".LowestBars(" + p2 + ");";
-                                        AddToInitializeMethod(s);
+                                        handled = true;
+                                        AddToUsing("WealthLab.AdvancedSmoothers");
+                                        InjectIndicator(varName, "HMA", 0, 1);
                                     }
                                     break;
                             }
