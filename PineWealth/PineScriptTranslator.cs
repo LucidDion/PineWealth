@@ -107,6 +107,8 @@ namespace WealthLab.Backtest
             boilerPlate = boilerPlate.Replace("<#Execute>", exec);
             string usings = usingClauses.ToStringNewLines();
             boilerPlate = boilerPlate.Replace("<#Using>", usings);
+            string constructor = constructorBody.ToStringNewLines();
+            boilerPlate = boilerPlate.Replace("<#Constructor>", constructor);
 
             return boilerPlate;
         }
@@ -230,6 +232,37 @@ namespace WealthLab.Backtest
                 //assignment?
                 else if (token == "=")
                 {
+                    //input statement processing
+                    if (nextToken == "input" && nextNextToken == ".")
+                    {
+                        if (tokens.Contains("(") && tokens.Contains(")"))
+                        {
+                            string paramName = prevToken;
+                            i += 3;
+                            if (i < tokens.Count)
+                            {
+                                switch(tokens[i])
+                                {
+                                    case "int":
+                                        CreateParameter(paramName, ParameterType.Int32, tokens);
+                                        break;
+                                    case "float":
+                                        CreateParameter(paramName, ParameterType.Double, tokens);
+                                        break;
+                                    case "bool":
+                                        CreateParameter(paramName, ParameterType.Int32, tokens);
+                                        break;
+                                    case "string":
+                                        throw new NotImplementedException();
+                                    case "source":
+                                        throw new NotImplementedException();
+                                }
+                            }
+                        }
+                        outTokens.Clear();
+                        break; //this line is processed
+                    }
+
                     //ensure variable is declared
                     if (prevToken != null)
                         varName = prevToken;
@@ -570,6 +603,17 @@ namespace WealthLab.Backtest
                 {
                     outTokens.Add(token + "[idx]");
                 }
+                //strategy parameter?
+                else if (_parameters.ContainsKey(token))
+                {
+                    string paramOut = token + ".";
+                    Parameter p = _parameters[token];
+                    if (p.Type == ParameterType.Int32)
+                        paramOut += "AsInt";
+                    else
+                        paramOut += "AsDouble";
+                    outTokens.Add(paramOut);
+                }
                 //output it as is
                 else
                 {
@@ -805,6 +849,13 @@ namespace WealthLab.Backtest
                 usingClauses.Add(uc);
         }
 
+        //add to constructor
+        private void AddToConstructor(string line)
+        {
+            line = "         " + line;
+            constructorBody.Add(line);
+        }
+
         //given a list of tokens, extract lists that represent a list of parameters, ie (P1, P2, P3) would return three lists of tokens
         private List<List<string>> ExtractParameterTokens(List<string> tokens)
         {
@@ -899,6 +950,49 @@ namespace WealthLab.Backtest
             }
         }
 
+        //create a strategy parameter
+        private void CreateParameter(string paramName, ParameterType pt, List<string> tokens)
+        {
+            //create parameter instance for tracking
+            Parameter p = new Parameter();
+            p.Type = pt;
+            p.Name = paramName;
+            _parameters[paramName] = p;
+
+            //create declaration statement
+            string dec = "private Parameter " + paramName + ";";
+            AddToVarDecl(dec);
+
+            //parse out parameters of the Pine Script input statement - first parameter after ( is the default value
+            int idx = tokens.IndexOf("(");
+            if (idx == -1)
+                return;
+            idx++;
+            if (idx >= tokens.Count)
+                return;
+            string defaultVal = tokens[idx];
+            if (defaultVal == "true")
+                defaultVal = "1";
+            if (defaultVal == "false") 
+                defaultVal = "0";
+
+            //DKK parse start/stop/step
+
+            //get title
+            string paramTitle = paramName;
+            idx = tokens.IndexOf("title");
+            if (idx > 0)
+            {
+                idx += 2;
+                if (idx < tokens.Count)
+                    paramTitle = tokens[idx];
+            }
+
+            //creating constructor statement
+            string cons = paramName + " = AddParameter(" + paramTitle + ", ParameterType." + pt + ", " + defaultVal + ");";
+            AddToConstructor(cons);
+        }
+
         //variables
         private bool indicatorMapped = false;
         private bool ifAdded = false;
@@ -910,10 +1004,12 @@ namespace WealthLab.Backtest
         private List<string> varDecl = new List<string>();
         private List<string> timeSeriesVars = new List<string>();
         private List<string> usingClauses = new List<string>();
+        private List<string> constructorBody = new List<string>();
         private static List<string> ohclv = new List<string>() { "open", "high", "low", "close", "volume" };
         private static List<string> mathOps = new List<string>() { "+", "-", "*", "/" };
         List<List<string>> indParams;
         private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" }, { "barssince", "BarsSince" },
-            { "bbw", "BBWidth" }, { "cci", "CCI" }, { "cmo", "CMO" }, { "cog", "CG" }, { "correlation", "Corr" }, { "dev", "Dev" } };
+            { "bbw", "BBWidth" }, { "cci", "CCI" }, { "cmo", "CMO" }, { "cog", "CG" }, { "correlation", "Corr" }, { "dev", "MeanAbsDev" } };
+        private Dictionary<string, Parameter> _parameters = new Dictionary<string, Parameter>();
     }
 }

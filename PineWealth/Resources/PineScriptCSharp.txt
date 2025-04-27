@@ -10,6 +10,12 @@ namespace WealthScript1
 {
    public class MyStrategy : UserStrategyBase
    {
+      //constructor
+      public MyStrategy() : base()
+      {
+<#Constructor>
+      }
+
       //create indicators and other objects here, this is executed prior to the main trading loop
       public override void Initialize(BarHistory bars)
       {
