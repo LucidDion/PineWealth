@@ -98,6 +98,13 @@ namespace WealthLab.Backtest
                 AddToExecuteMethod("}");
             }
 
+            //add variable declarations
+            foreach(KeyValuePair<string, string> kvp in varTypes)
+            {
+                string line = "private " + kvp.Value + " " + kvp.Key + ";";
+                AddToVarDecl(line);
+            }
+
             //replace boilerplate tags with generated code
             string vd = varDecl.ToStringNewLines();
             boilerPlate = boilerPlate.Replace("<#VarDecl>", vd);
@@ -112,6 +119,7 @@ namespace WealthLab.Backtest
 
             //final cleanup
             boilerPlate = boilerPlate.Replace("WLColor . ", "WLColor.");
+            boilerPlate = boilerPlate.Replace("else ( if", "else if (");
 
             return boilerPlate;
         }
@@ -130,6 +138,22 @@ namespace WealthLab.Backtest
             string paneTag = "Price";
             indicatorMapped = false;
 
+            //inject implied assignments from if/else-assignment
+            if (ifAssignment != null)
+            {
+                tokens.Insert(0, "=");
+                tokens.Insert(0, ifAssignment);
+                ifAssigned = ifAssignment;
+                ifAssignment = null;
+            }
+            if (elseAssignment != null)
+            {
+                tokens.Insert(0, "=");
+                tokens.Insert(0, elseAssignment);
+                elseAssignment = null;
+            }
+
+            //process each token
             for (int i = 0; i < tokens.Count; i++)
             {
                 string token = tokens[i];
@@ -205,7 +229,15 @@ namespace WealthLab.Backtest
                         string colorVal = tokens[idxColor];
                         if (colorVal == "new")
                         {
-                            //DKK new color
+                            //new color -> MakeTransparent
+                            List<List<string>> colorNewParams = ExtractParameterTokens(tokens);
+                            recurse++;
+                            string colorNewArg1 = ConvertTokens(colorNewParams[0]);
+                            colorNewArg1 = colorNewArg1.Replace("WLColor ", "");
+                            string colorNewArg2 = ConvertTokens(colorNewParams[1]);
+                            recurse--;
+                            outTokens.Add(colorNewArg1.Trim() + ".MakeTransparent(" + colorNewArg2 + ")");
+                            RemoveTokensUpTo(tokens, ")", i, true);
                         }
                         else if (colorVal == "rgb")
                         {
@@ -332,8 +364,8 @@ namespace WealthLab.Backtest
                                     case "source":
                                         {
                                             //just interpret source inputs as closing price
-                                            string decl = "private TimeSeries " + varName + ";";
-                                            AddToVarDecl(decl);
+                                            varName = tokens[0];
+                                            DeclareVar(varName, "TimeSeries");
                                             string init = varName + " = bars.Close;";
                                             AddToInitializeMethod(init);
                                         }
@@ -354,7 +386,9 @@ namespace WealthLab.Backtest
                     if (i + 1 < tokens.Count)
                     {
                         string varVal = tokens[i + 1];
-                        if (varVal == "true" || varVal == "false")
+                        if (varVal == "color")
+                            varType = "WLColor";
+                        else if (varVal == "true" || varVal == "false")
                             varType = "bool";
                         else if (varVal.StartsWith("\""))
                             varType = "string";
@@ -396,8 +430,7 @@ namespace WealthLab.Backtest
                                     varType = "TimeSeries";
 
                                     //process remainder of tokens and put in initialize
-                                    string decl = "private " + varType + " " + varName + ";";
-                                    AddToVarDecl(decl);
+                                    DeclareVar(varName, varType);
                                     recurse++;
                                     string statement = varName + " = " + ConvertTokens(tokensAfter) + " ;";
                                     recurse--;
@@ -652,9 +685,46 @@ namespace WealthLab.Backtest
                 //if statement
                 else if (token == "if")
                 {
+                    //handle Pine Script if assignment syntax
+                    if (prevToken == "=")
+                    {
+                        varName = tokens[0];
+                        ifAssignment = varName;
+                        outTokens.Clear();
+                    }
+
                     needsSemicolon = false;
                     outTokens.Add(token);
                     ifAdded = true;
+
+                    //add parens if not there
+                    if (!tokens.Contains("("))
+                    {
+                        int insertIdx = i + 1;
+                        if (tokens[0] == "else")
+                            insertIdx++;
+                        tokens.Insert(insertIdx, "(");
+                        tokens.Add(")");
+                    }
+                }
+                else if (token == "else")
+                {
+                    if (ifAssigned != null)
+                    {
+                        elseAssignment = ifAssigned;
+                        ifAssigned = null;
+                    }
+
+                    needsSemicolon = false;
+                    outTokens.Add(token);
+                    ifAdded = true;
+
+                    //add parens if not there
+                    if (!tokens.Contains("("))
+                    {
+                        tokens.Insert(i + 1, "(");
+                        tokens.Add(")");
+                    }
                 }
                 //strategy entry
                 else if (token == "strategy" && nextToken == "." && nextNextToken == "entry")
@@ -720,7 +790,7 @@ namespace WealthLab.Backtest
 
                 //did we declare a variable?
                 if (varName != "")
-                    AddToVarDecl("private " + varType + " " + varName + ";");
+                    DeclareVar(varName, varType);
 
                 //return output
                 return execOut;
@@ -904,7 +974,9 @@ namespace WealthLab.Backtest
         //add a line to var decl
         private void AddToVarDecl(string line)
         {
-            varDecl.Add("      " + line.Trim());
+            line = "      " + line.Trim();
+            if (!varDecl.Contains(line))
+                varDecl.Add(line);
         }
 
         //add a line to initialize
@@ -1025,11 +1097,10 @@ namespace WealthLab.Backtest
         //declare a variable
         private void DeclareVar(string varName, string varType)
         {
-            if (!varDecl.Contains(varName))
-            {
-                string vd = "private " + varType + " " + varName + ";";
-                AddToVarDecl(vd);
-            }
+            varTypes[varName] = varType;
+            if (varsDeclared.Contains(varName))
+                return;
+            varsDeclared.Add(varName);
         }
 
         //create a strategy parameter
@@ -1091,12 +1162,36 @@ namespace WealthLab.Backtest
             return null;
         }
 
+        //remove tokens up to the specified end token
+        private void RemoveTokensUpTo(List<string> tokens, string endToken, int startIdx, bool inclusive)
+        {
+            for(int n = startIdx; n < tokens.Count; n++)
+            {
+                if (tokens[n] == endToken)
+                {
+                    if (inclusive)
+                        tokens.RemoveAt(n);
+                    return;
+                }
+                else
+                {
+                    tokens.RemoveAt(n);
+                    n--;
+                }
+            }
+        }
+
         //variables
         private bool indicatorMapped = false;
+        private string ifAssignment = null;
+        private string ifAssigned = null;
+        private string elseAssignment = null;
         private bool ifAdded = false;
         private int recurse = 0;
         private int parensCount = 0;
         private int indentLevel = 0;
+        private List<string> varsDeclared = new List<string>();
+        private Dictionary<string, string> varTypes = new Dictionary<string, string>();
         private List<string> initializeBody = new List<string>();
         private List<string> executeBody = new List<string>();
         private List<string> varDecl = new List<string>();
