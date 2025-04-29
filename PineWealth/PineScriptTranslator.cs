@@ -110,6 +110,9 @@ namespace WealthLab.Backtest
             string constructor = constructorBody.ToStringNewLines();
             boilerPlate = boilerPlate.Replace("<#Constructor>", constructor);
 
+            //final cleanup
+            boilerPlate = boilerPlate.Replace("WLColor . ", "WLColor.");
+
             return boilerPlate;
         }
 
@@ -124,6 +127,7 @@ namespace WealthLab.Backtest
             bool needsSemicolon = true;
             string varName = "";
             string varType = "var";
+            string paneTag = "Price";
             indicatorMapped = false;
 
             for (int i = 0; i < tokens.Count; i++)
@@ -141,8 +145,79 @@ namespace WealthLab.Backtest
                     break;
                 //first token = strategy? if so, ignore that line
                 else if (token == "strategy" && nextToken == "(")
-                {
                     break;
+                //same for indicator, except parse overlay
+                else if (token == "indicator" && nextToken == "(")
+                {
+                    List<List<string>> indTokens = ExtractParameterTokens(tokens);
+                    string overlay = GetKeyValue("overlay", indTokens);
+                    if (overlay == "false")
+                    {
+                        string title = GetKeyValue("title", indTokens);
+                        paneTag = title == null ? "NewPane" : title;
+                    }
+                    break;
+                }
+                //plot statement?
+                else if (token == "plot")
+                {
+                    List<List<string>> plotTokens = ExtractParameterTokens(tokens);
+
+                    //first parameter is series/value to plot - see if it's a numeric value
+                    recurse++;
+                    string arg1 = ConvertTokens(plotTokens[0]);
+
+                    //pluck other arguments that we support
+                    string argColor = GetKeyValue("color", plotTokens);
+                    string argTitle = GetKeyValue("title", plotTokens);
+                    string argLineWidth = GetKeyValue("linewidth", plotTokens);
+                    string argStyle = GetKeyValue("style", plotTokens);
+                    recurse--;
+
+                    if (IsNumeric(arg1))
+                    {
+                        //DKK use DrawHorzLine for this one
+                    }
+                    else
+                    {
+                        //use PlotTimeSeries for series plots (this will handle indicators and TimeSeries)
+                        if (argTitle == null)
+                            argTitle = arg1;
+                        if (argColor == null)
+                            argColor = "Blue";
+                        string plotLine = "PlotTimeSeries(" + arg1 + ", " + argTitle + ", \"" + paneTag + "\", " + argColor + ");";
+                        AddToInitializeMethod(plotLine);
+                    }
+
+                    //line processing completed
+                    break;
+                }
+                //color -> WLColor
+                else if (token == "color" && nextToken == ".")
+                {
+                    outTokens.Add("WLColor");
+
+                    //transform the color value token
+                    int idxColor = i + 2;
+                    if (idxColor < tokens.Count)
+                    {
+                        //DKK full color mapping
+                        string colorVal = tokens[idxColor];
+                        if (colorVal == "new")
+                        {
+                            //DKK new color
+                        }
+                        else if (colorVal == "rgb")
+                        {
+                            //DKK rgb color
+                        }
+                        else if (colorVal == "rgba")
+                        {
+                            //DKK rgba color
+                        }
+                        else
+                            tokens[idxColor] = tokens[idxColor].ToProper();
+                    }
                 }
                 //tuple assignment (square bracket as first token)?
                 else if (token == "[" && i == 0)
@@ -241,7 +316,7 @@ namespace WealthLab.Backtest
                             i += 3;
                             if (i < tokens.Count)
                             {
-                                switch(tokens[i])
+                                switch (tokens[i])
                                 {
                                     case "int":
                                         CreateParameter(paramName, ParameterType.Int32, tokens);
@@ -255,7 +330,14 @@ namespace WealthLab.Backtest
                                     case "string":
                                         throw new NotImplementedException();
                                     case "source":
-                                        throw new NotImplementedException();
+                                        {
+                                            //just interpret source inputs as closing price
+                                            string decl = "private TimeSeries " + varName + ";";
+                                            AddToVarDecl(decl);
+                                            string init = varName + " = bars.Close;";
+                                            AddToInitializeMethod(init);
+                                        }
+                                        break;
                                 }
                             }
                         }
@@ -286,7 +368,7 @@ namespace WealthLab.Backtest
                             //see if it's a mathematical operation, and if so does it involve series?
                             List<string> tokensAfter = GetTokensAfter("=", tokens);
                             bool isMath = false;
-                            foreach(string tokenOp in tokensAfter)
+                            foreach (string tokenOp in tokensAfter)
                                 if (mathOps.Contains(tokenOp))
                                 {
                                     isMath = true;
@@ -296,7 +378,7 @@ namespace WealthLab.Backtest
                             {
                                 //determine if any of the terms are series
                                 bool hasSeriesTerm = false;
-                                for(int ta = 0; ta < tokensAfter.Count; ta++)
+                                for (int ta = 0; ta < tokensAfter.Count; ta++)
                                 {
                                     string ta0 = tokensAfter[ta];
                                     string ta1 = ta + 1 < tokensAfter.Count ? tokensAfter[ta + 1] : null;
@@ -991,6 +1073,22 @@ namespace WealthLab.Backtest
             //creating constructor statement
             string cons = paramName + " = AddParameter(" + paramTitle + ", ParameterType." + pt + ", " + defaultVal + ");";
             AddToConstructor(cons);
+        }
+
+        //given a list of List<tokens>, return the value portion of the specified key
+        private string GetKeyValue(string key, List<List<string>> tokenLists)
+        {
+            foreach(List<string> list in tokenLists)
+            {
+                if (list.Count > 1 && list[0] == key && list[1] == "=")
+                {
+                    List<string> valueList = new List<string>();
+                    for (int n = 2; n < list.Count; n++)
+                        valueList.Add(list[n]);
+                    return ConvertTokens(valueList);
+                }
+            }
+            return null;
         }
 
         //variables
