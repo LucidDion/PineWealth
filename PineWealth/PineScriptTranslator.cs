@@ -80,9 +80,10 @@ namespace WealthLab.Backtest
                 string execOut = ConvertTokens(tokens);
                 if (execOut != null && !indicatorMapped)
                 {
-                    //did we add an if or other indenting statement?
+                    //add the line
                     AddToExecuteMethod(execOut);
 
+                    //did we add an if or other indenting statement?
                     if (ifAdded)
                     {
                         AddToExecuteMethod("{");
@@ -120,6 +121,7 @@ namespace WealthLab.Backtest
             //final cleanup
             boilerPlate = boilerPlate.Replace("WLColor . ", "WLColor.");
             boilerPlate = boilerPlate.Replace("else ( if", "else if (");
+            boilerPlate = boilerPlate.Replace(" .Make", ".Make");
 
             return boilerPlate;
         }
@@ -216,6 +218,34 @@ namespace WealthLab.Backtest
                     //line processing completed
                     break;
                 }
+                //bgcolor -> SetBackgroundColor
+                else if (token == "bgcolor")
+                {
+                    recurse++;
+                    List<List<string>> bgcTokens = ExtractParameterTokens(tokens);
+                    string bgColor = GetKeyValue("color", bgcTokens);
+                    string bgTrans = GetKeyValue("transp", bgcTokens);
+                    foreach(List<string> args in bgcTokens)
+                    {
+                        if (bgTrans == null && args.Count == 1 && IsNumeric(args[0]))
+                            bgTrans = args[0];
+                        if (bgColor == null)
+                        {
+                            bgColor = ConvertTokens(args);
+                            break;
+                        }
+                    }
+                    recurse--;
+                    if (bgColor != null)
+                    {
+                        if (bgTrans != null)
+                            bgColor += ".MakeTransparent((byte)(" + bgTrans + "  * 2.55))";
+                        string bgLine = "SetBackgroundColor(bars, idx, " + bgColor + ");";
+                        AddToExecuteMethod(bgLine);
+                        outTokens.Clear();
+                    }
+                    break; //complete line processing
+                }
                 //color -> WLColor
                 else if (token == "color" && nextToken == ".")
                 {
@@ -236,7 +266,7 @@ namespace WealthLab.Backtest
                             colorNewArg1 = colorNewArg1.Replace("WLColor ", "");
                             string colorNewArg2 = ConvertTokens(colorNewParams[1]);
                             recurse--;
-                            outTokens.Add(colorNewArg1.Trim() + ".MakeTransparent(" + colorNewArg2 + ")");
+                            outTokens.Add(colorNewArg1.Trim() + ".MakeTransparent((byte)(" + colorNewArg2 + " * 2.55))");
                             RemoveTokensUpTo(tokens, ")", i, true);
                         }
                         else if (colorVal == "rgb")
@@ -989,9 +1019,27 @@ namespace WealthLab.Backtest
         //add a line to execute method
         private void AddToExecuteMethod(string line)
         {
+            //pre-process indentation
             line = "         " + line;
             for (int i = 0; i < indentLevel; i++)
                 line = "   " + line;
+
+            //post process the line - handle cases where we may be comparing boolean series 
+            line = line.Replace("else ( if", "else if (");
+            if (line.Contains("if (") && line.Contains("["))
+            {
+                bool hasOp = false;
+                foreach (string logOp in logicalOps)
+                    if (line.Contains(logOp))
+                    {
+                        hasOp = true;
+                        break;
+                    }
+                if (!hasOp)
+                    line = line.Replace(" )", " > 0 )");
+            }
+
+            //add the line
             executeBody.Add(line);
         }
 
@@ -1200,6 +1248,7 @@ namespace WealthLab.Backtest
         private List<string> constructorBody = new List<string>();
         private static List<string> ohclv = new List<string>() { "open", "high", "low", "close", "volume" };
         private static List<string> mathOps = new List<string>() { "+", "-", "*", "/" };
+        private static List<string> logicalOps = new List<string>() { ">", "<", ">=", "<=" };
         List<List<string>> indParams;
         private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" }, { "barssince", "BarsSince" },
             { "bbw", "BBWidth" }, { "cci", "CCI" }, { "cmo", "CMO" }, { "cog", "CG" }, { "correlation", "Corr" }, { "dev", "MeanAbsDev" } };
