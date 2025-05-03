@@ -1,5 +1,4 @@
-﻿using System.Security.Cryptography;
-using System.Text;
+﻿using System.Text;
 using WealthLab.Core;
 
 namespace WealthLab.Backtest
@@ -8,6 +7,9 @@ namespace WealthLab.Backtest
     //DKK combine N . N, N . and . N patterns into single tokens before processing
     public class PineScriptTranslator
     {
+        //current line mode
+        public LineMode LineMode { get; set; }
+
         //perform the translation
         public string Translate(string pineScriptSource, string boilerPlate)
         {
@@ -26,11 +28,9 @@ namespace WealthLab.Backtest
             //process lines
             for (int n = 0; n < lines.Count; n++)
             {
+                //obtain line
                 string line = lines[n];
-
-                //comment?
-                if (line.TrimStart().StartsWith("//"))
-                    continue;
+                LineMode = LineMode.Scalar;
 
                 //remove embedded comment
                 int idx = line.IndexOf("//");
@@ -64,6 +64,17 @@ namespace WealthLab.Backtest
                 if (line == "")
                     continue;
 
+                //version 3 does not use ta. library, prepend ta.
+                foreach(string taInd in taIndicators)
+                {
+                    string oldStyle = " " + taInd + "(";
+                    string newStyle = " ta." + taInd + "(";
+                    line = line.Replace(oldStyle, newStyle);
+                }
+
+                //handle default input type
+                line = line.Replace("input(", "input.int(");
+
                 //see if the current indent level has decreased, if so we need to add a closing brace
                 while(indentCount < indentLevel)
                 {
@@ -74,107 +85,126 @@ namespace WealthLab.Backtest
                 //get tokens
                 List<string> tokens = TokenizeLine(line);
                 tokens = CombineFloatTokens(tokens);
+                tokens = CombineLibTokens(tokens);
+                string token = tokens[0];
+                string nextToken = tokens.Count < 2 ? null : tokens[1];
+                string nextNextToken = tokens.Count < 3 ? null : tokens[2];
 
                 //process
-                ifAdded = false;
-                string execOut = ConvertTokens(tokens);
-                if (execOut != null && !indicatorMapped)
+                if (nextToken == "=")
                 {
-                    //add the line
-                    AddToExecuteMethod(execOut);
+                    //assignment statement
+                    string varName = token;
+                    string varType = "double";
+                    LineMode = LineMode.Scalar;
+                    tokens.RemoveAt(0);
+                    tokens.RemoveAt(0);
 
-                    //did we add an if or other indenting statement?
-                    if (ifAdded)
+                    //deduce variable type
+                    if (tokens.Count > 0)
                     {
-                        AddToExecuteMethod("{");
-                        indentLevel++;
+                        string varVal = tokens[0];
+                        if (varVal == "color")
+                            varType = "WLColor";
+                        else if (varVal == "true" || varVal == "false")
+                            varType = "bool";
+                        else if (varVal.StartsWith("\""))
+                            varType = "string";
+                        else if (tokens.Contains("ta."))
+                        {
+                            varType = "TimeSeries";
+                            LineMode = LineMode.Series;
+                        }
+                        else if (tokens.Intersect(ohclv).Any())
+                        {
+                            varType = "TimeSeries";
+                            LineMode = LineMode.Series;
+                        }
+                        else if (IsNumeric(varVal))
+                        {
+                            //numeric value - default to double
+                            varType = "double";
+                        }
+                        else
+                        {
+                            //see if it's a mathematical operation, and if so does it involve series?
+                            List<string> tokensAfter = GetTokensAfter("=", tokens);
+                            bool isMath = false;
+                            foreach (string tokenOp in tokensAfter)
+                                if (mathOps.Contains(tokenOp))
+                                {
+                                    isMath = true;
+                                    break;
+                                }
+                            if (isMath)
+                            {
+                                //determine if any of the terms are series
+                                bool hasSeriesTerm = false;
+                                for (int ta = 0; ta < tokensAfter.Count; ta++)
+                                {
+                                    string ta0 = tokensAfter[ta];
+                                    if (ohclv.Contains(ta0))
+                                        hasSeriesTerm = true;
+                                    else if (ta0 == "ta.")
+                                        hasSeriesTerm = true;
+                                    if (hasSeriesTerm)
+                                        break;
+                                }
+
+                                if (hasSeriesTerm)
+                                {
+                                    //TimeSeries
+                                    varType = "TimeSeries";
+                                    LineMode = LineMode.Series;
+
+                                    //process remainder of tokens and put in initialize
+                                    DeclareVar(varName, varType);
+                                    recurse++;
+                                    string statement = varName + " = " + ConvertTokens(tokensAfter) + " ;";
+                                    recurse--;
+                                    AddToInitializeMethod(statement);
+                                    break;
+                                }
+                                else
+                                {
+                                    //assume float
+                                    varType = "double";
+                                }
+                            }
+                            else
+                            {
+                                //assume float
+                                varType = "double";
+                            }
+                        }
                     }
+
+                    //remember time series types
+                    if (varType == "TimeSeries")
+                        if (!timeSeriesVars.Contains(varName))
+                            timeSeriesVars.Add(varName);
+
+                    //construct the assignment statement
+                    string assignmentLine = varName + " = ";
+                    assignmentLine += ConvertTokens(tokens) + ";";
+                    DeclareVar(varName, varType);
+                    if (LineMode == LineMode.Scalar)
+                        AddToExecuteMethod(assignmentLine);
+                    else
+                        AddToInitializeMethod(assignmentLine);
                 }
-            }
-
-            //final closing braces
-            while(indentLevel > 0)
-            {
-                indentLevel--;
-                AddToExecuteMethod("}");
-            }
-
-            //add variable declarations
-            foreach(KeyValuePair<string, string> kvp in varTypes)
-            {
-                string line = "private " + kvp.Value + " " + kvp.Key + ";";
-                AddToVarDecl(line);
-            }
-
-            //replace boilerplate tags with generated code
-            string vd = varDecl.ToStringNewLines();
-            boilerPlate = boilerPlate.Replace("<#VarDecl>", vd);
-            string init = initializeBody.ToStringNewLines();
-            boilerPlate = boilerPlate.Replace("<#Initialize>", init);
-            string exec = executeBody.ToStringNewLines();
-            boilerPlate = boilerPlate.Replace("<#Execute>", exec);
-            string usings = usingClauses.ToStringNewLines();
-            boilerPlate = boilerPlate.Replace("<#Using>", usings);
-            string constructor = constructorBody.ToStringNewLines();
-            boilerPlate = boilerPlate.Replace("<#Constructor>", constructor);
-
-            //final cleanup
-            boilerPlate = boilerPlate.Replace("WLColor . ", "WLColor.");
-            boilerPlate = boilerPlate.Replace("else ( if", "else if (");
-            boilerPlate = boilerPlate.Replace(" .Make", ".Make");
-
-            return boilerPlate;
-        }
-
-        //given a list of tokens, returns the converted C# string
-        private string ConvertTokens(List<string> tokens)
-        {
-            //our output tokens
-            List<string> outTokens = new List<string>();
-
-            //process tokens
-            bool mapIndicator = false;
-            bool needsSemicolon = true;
-            string varName = "";
-            string varType = "var";
-            string paneTag = "Price";
-            indicatorMapped = false;
-
-            //inject implied assignments from if/else-assignment
-            if (ifAssignment != null)
-            {
-                tokens.Insert(0, "=");
-                tokens.Insert(0, ifAssignment);
-                ifAssigned = ifAssignment;
-                ifAssignment = null;
-            }
-            if (elseAssignment != null)
-            {
-                tokens.Insert(0, "=");
-                tokens.Insert(0, elseAssignment);
-                elseAssignment = null;
-            }
-
-            //process each token
-            for (int i = 0; i < tokens.Count; i++)
-            {
-                string token = tokens[i];
-                string prevToken = i == 0 ? null : tokens[i - 1];
-                string nextToken = i + 1 < tokens.Count ? tokens[i + 1] : null;
-                string nextNextToken = i + 2 < tokens.Count ? tokens[i + 2] : null;
-
-                //tab?
-                if (token == "\t")
-                    continue;
-                //whitespace?
-                else if (token.Trim() == "")
-                    break;
-                //first token = strategy? if so, ignore that line
+                else if (line.Trim().StartsWith("//"))
+                {
+                    //full line comment
+                    prevComments.Add(line);
+                }
                 else if (token == "strategy" && nextToken == "(")
-                    break;
-                //same for indicator, except parse overlay
+                {
+                    //NOP
+                }
                 else if (token == "indicator" && nextToken == "(")
                 {
+                    //assign pane tag from indicator token
                     List<List<string>> indTokens = ExtractParameterTokens(tokens);
                     string overlay = GetKeyValue("overlay", indTokens);
                     if (overlay == "false")
@@ -184,9 +214,11 @@ namespace WealthLab.Backtest
                     }
                     break;
                 }
-                //plot statement?
                 else if (token == "plot")
                 {
+                    LineMode = LineMode.Series;
+
+                    //plot statement
                     List<List<string>> plotTokens = ExtractParameterTokens(tokens);
 
                     //first parameter is series/value to plot - see if it's a numeric value
@@ -214,18 +246,14 @@ namespace WealthLab.Backtest
                         string plotLine = "PlotTimeSeries(" + arg1 + ", " + argTitle + ", \"" + paneTag + "\", " + argColor + ");";
                         AddToInitializeMethod(plotLine);
                     }
-
-                    //line processing completed
-                    break;
                 }
-                //bgcolor -> SetBackgroundColor
                 else if (token == "bgcolor")
                 {
-                    recurse++;
+                    LineMode = LineMode.Series;
                     List<List<string>> bgcTokens = ExtractParameterTokens(tokens);
                     string bgColor = GetKeyValue("color", bgcTokens);
                     string bgTrans = GetKeyValue("transp", bgcTokens);
-                    foreach(List<string> args in bgcTokens)
+                    foreach (List<string> args in bgcTokens)
                     {
                         if (bgTrans == null && args.Count == 1 && IsNumeric(args[0]))
                             bgTrans = args[0];
@@ -235,65 +263,70 @@ namespace WealthLab.Backtest
                             break;
                         }
                     }
-                    recurse--;
                     if (bgColor != null)
                     {
                         if (bgTrans != null)
                             bgColor += ".MakeTransparent((byte)(" + bgTrans + "  * 2.55))";
                         string bgLine = "SetBackgroundColor(bars, idx, " + bgColor + ");";
                         AddToExecuteMethod(bgLine);
-                        outTokens.Clear();
                     }
-                    break; //complete line processing
                 }
-                //color -> WLColor
-                else if (token == "color" && nextToken == ".")
+                else if (token == "strategy" && nextToken == "." && nextNextToken == "entry")
                 {
-                    outTokens.Add("WLColor");
+                    //strategy entry
+                    string sigName = tokens[4];
+                    sigName = sigName.Replace("\"", "");
+                    bool isLong = tokens[8] == "long";
+                    string tt = isLong ? "Buy" : "Short";
+                    string pt = "PlaceTrade(bars, TransactionType." + tt + ", OrderType.Market, 0, \"" + sigName + "\");";
 
-                    //transform the color value token
-                    int idxColor = i + 2;
-                    if (idxColor < tokens.Count)
+                    //add the code to close opposing order
+                    if (isLong)
                     {
-                        //DKK full color mapping
-                        string colorVal = tokens[idxColor];
-                        if (colorVal == "new")
-                        {
-                            //new color -> MakeTransparent
-                            List<List<string>> colorNewParams = ExtractParameterTokens(tokens);
-                            recurse++;
-                            string colorNewArg1 = ConvertTokens(colorNewParams[0]);
-                            colorNewArg1 = colorNewArg1.Replace("WLColor ", "");
-                            string colorNewArg2 = ConvertTokens(colorNewParams[1]);
-                            recurse--;
-                            outTokens.Add(colorNewArg1.Trim() + ".MakeTransparent((byte)(" + colorNewArg2 + " * 2.55))");
-                            RemoveTokensUpTo(tokens, ")", i, true);
-                        }
-                        else if (colorVal == "rgb")
-                        {
-                            //DKK rgb color
-                        }
-                        else if (colorVal == "rgba")
-                        {
-                            //DKK rgba color
-                        }
-                        else
-                            tokens[idxColor] = tokens[idxColor].ToProper();
+                        AddToExecuteMethod("if (HasOpenPosition(bars, PositionType.Short))");
+                        AddToExecuteMethod("   PlaceTrade(bars, TransactionType.Cover, OrderType.Market);");
                     }
+                    else
+                    {
+                        AddToExecuteMethod("if (HasOpenPosition(bars, PositionType.Long))");
+                        AddToExecuteMethod("   PlaceTrade(bars, TransactionType.Sell, OrderType.Market);");
+                    }
+
+                    //add entry trade
+                    AddToExecuteMethod(pt);
                 }
-                //tuple assignment (square bracket as first token)?
-                else if (token == "[" && i == 0)
+                else if (token == "if")
                 {
+                    //if statement
+                    LineMode = LineMode.Scalar;
+
+                    //parens?
+                    if (nextToken != "(")
+                    {
+                        tokens.Insert(1, "(");
+                        tokens.Add(")");
+                    }
+
+                    //compose line
+                    string ifLine = ConvertTokens(tokens);
+                    AddToExecuteMethod(ifLine);
+                    AddToExecuteMethod("{");
+                    indentLevel++;
+                }
+                else if (token == "[")
+                {
+                    //tuple assignment
                     //special logic to determine which indicator produced the result, create an intermediate indicator result and afterward split them out
+                    LineMode = LineMode.Series;
                     int closeBracketIdx = tokens.IndexOf("]");
-                    if (closeBracketIdx > i)
+                    if (closeBracketIdx > 0)
                     {
                         List<string> tokensAfter = GetTokensAfter("=", tokens);
-                        if (tokensAfter[0] == "ta" && tokensAfter[1] == ".")
+                        if (tokensAfter[0] == "ta.")
                         {
                             recurse++;
                             indParams = ExtractParameterTokens(tokensAfter);
-                            switch (tokensAfter[2])
+                            switch (tokensAfter[1])
                             {
                                 case "bb":
                                     {
@@ -360,315 +393,241 @@ namespace WealthLab.Backtest
                                     break;
                             }
                             recurse--;
-                            break; //this completes processing of this line
                         }
                     }
                     else
                         throw new ArgumentException("Closing tuple bracket not found.");
                 }
-                //assignment?
-                else if (token == "=")
+                else
                 {
-                    //input statement processing
-                    if (nextToken == "input" && nextNextToken == ".")
+                    //fallback - vanilla processing
+                    string outLine = ConvertTokens(tokens);
+                    if (outLine != null)
                     {
-                        if (tokens.Contains("(") && tokens.Contains(")"))
-                        {
-                            string paramName = prevToken;
-                            i += 3;
-                            if (i < tokens.Count)
-                            {
-                                switch (tokens[i])
-                                {
-                                    case "int":
-                                        CreateParameter(paramName, ParameterType.Int32, tokens);
-                                        break;
-                                    case "float":
-                                        CreateParameter(paramName, ParameterType.Double, tokens);
-                                        break;
-                                    case "bool":
-                                        CreateParameter(paramName, ParameterType.Int32, tokens);
-                                        break;
-                                    case "string":
-                                        throw new NotImplementedException();
-                                    case "source":
-                                        {
-                                            //just interpret source inputs as closing price
-                                            varName = tokens[0];
-                                            DeclareVar(varName, "TimeSeries");
-                                            string init = varName + " = bars.Close;";
-                                            AddToInitializeMethod(init);
-                                        }
-                                        break;
-                                }
-                            }
-                        }
-                        outTokens.Clear();
-                        break; //this line is processed
+                        if (!outLine.Trim().EndsWith("\t"))
+                            outLine += ";";
+                        AddToExecuteMethod(outLine);
                     }
+                }
+            }
 
-                    //ensure variable is declared
-                    if (prevToken != null)
-                        varName = prevToken;
-                    outTokens.Add("=");
+            //final closing braces
+            while(indentLevel > 0)
+            {
+                indentLevel--;
+                AddToExecuteMethod("}");
+            }
 
-                    //deduce variable type
-                    if (i + 1 < tokens.Count)
+            //add variable declarations
+            foreach(KeyValuePair<string, string> kvp in varTypes)
+            {
+                string line = "private " + kvp.Value + " " + kvp.Key + ";";
+                AddToVarDecl(line);
+            }
+
+            //replace boilerplate tags with generated code
+            string vd = varDecl.ToStringNewLines();
+            boilerPlate = boilerPlate.Replace("<#VarDecl>", vd);
+            string init = initializeBody.ToStringNewLines();
+            boilerPlate = boilerPlate.Replace("<#Initialize>", init);
+            string exec = executeBody.ToStringNewLines();
+            boilerPlate = boilerPlate.Replace("<#Execute>", exec);
+            string usings = usingClauses.ToStringNewLines();
+            boilerPlate = boilerPlate.Replace("<#Using>", usings);
+            string constructor = constructorBody.ToStringNewLines();
+            boilerPlate = boilerPlate.Replace("<#Constructor>", constructor);
+
+            //final cleanup
+            boilerPlate = boilerPlate.Replace("WLColor . ", "WLColor.");
+            boilerPlate = boilerPlate.Replace("else ( if", "else if (");
+            boilerPlate = boilerPlate.Replace(" .Make", ".Make");
+
+            return boilerPlate;
+        }
+
+        //given a list of tokens, returns the converted C# string
+        private string ConvertTokens(List<string> tokens)
+        {
+            //our output tokens
+            List<string> outTokens = new List<string>();
+
+            //process tokens
+            string varName = "";
+            string varType = "var";
+            indicatorMapped = false;
+
+            //inject implied assignments from if/else-assignment
+            if (ifAssignment != null)
+            {
+                tokens.Insert(0, "=");
+                tokens.Insert(0, ifAssignment);
+                ifAssigned = ifAssignment;
+                ifAssignment = null;
+            }
+            if (elseAssignment != null)
+            {
+                tokens.Insert(0, "=");
+                tokens.Insert(0, elseAssignment);
+                elseAssignment = null;
+            }
+
+            //process each token
+            for (int i = 0; i < tokens.Count; i++)
+            {
+                string token = tokens[i];
+                string prevToken = i == 0 ? null : tokens[i - 1];
+                string nextToken = i + 1 < tokens.Count ? tokens[i + 1] : null;
+                string nextNextToken = i + 2 < tokens.Count ? tokens[i + 2] : null;
+
+                //tab?
+                if (token == "\t")
+                    continue;
+                //whitespace?
+                else if (token.Trim() == "")
+                    break;
+                //color -> WLColor
+                else if (token == "color" && nextToken == ".")
+                {
+                    outTokens.Add("WLColor");
+
+                    //transform the color value token
+                    int idxColor = i + 2;
+                    if (idxColor < tokens.Count)
                     {
-                        string varVal = tokens[i + 1];
-                        if (varVal == "color")
-                            varType = "WLColor";
-                        else if (varVal == "true" || varVal == "false")
-                            varType = "bool";
-                        else if (varVal.StartsWith("\""))
-                            varType = "string";
-                        else if (IsNumeric(varVal))
+                        //DKK full color mapping
+                        string colorVal = tokens[idxColor];
+                        if (colorVal == "new")
                         {
-                            //numeric value - default to double
-                            varType = "double";
+                            //new color -> MakeTransparent
+                            List<List<string>> colorNewParams = ExtractParameterTokens(tokens);
+                            recurse++;
+                            string colorNewArg1 = ConvertTokens(colorNewParams[0]);
+                            colorNewArg1 = colorNewArg1.Replace("WLColor ", "");
+                            string colorNewArg2 = ConvertTokens(colorNewParams[1]);
+                            recurse--;
+                            outTokens.Add(colorNewArg1.Trim() + ".MakeTransparent((byte)(" + colorNewArg2 + " * 2.55))");
+                            RemoveTokensUpTo(tokens, ")", i, true);
+                        }
+                        else if (colorVal == "rgb")
+                        {
+                            //DKK rgb color
+                        }
+                        else if (colorVal == "rgba")
+                        {
+                            //DKK rgba color
                         }
                         else
-                        {
-                            //see if it's a mathematical operation, and if so does it involve series?
-                            List<string> tokensAfter = GetTokensAfter("=", tokens);
-                            bool isMath = false;
-                            foreach (string tokenOp in tokensAfter)
-                                if (mathOps.Contains(tokenOp))
-                                {
-                                    isMath = true;
-                                    break;
-                                }
-                            if (isMath)
-                            {
-                                //determine if any of the terms are series
-                                bool hasSeriesTerm = false;
-                                for (int ta = 0; ta < tokensAfter.Count; ta++)
-                                {
-                                    string ta0 = tokensAfter[ta];
-                                    string ta1 = ta + 1 < tokensAfter.Count ? tokensAfter[ta + 1] : null;
-                                    if (ohclv.Contains(ta0))
-                                        hasSeriesTerm = true;
-                                    else if (ta0 == "ta" && ta1 == ".")
-                                        hasSeriesTerm = true;
-                                    if (hasSeriesTerm)
-                                        break;
-                                }
-
-                                if (hasSeriesTerm)
-                                {
-                                    //TimeSeries
-                                    varType = "TimeSeries";
-
-                                    //process remainder of tokens and put in initialize
-                                    DeclareVar(varName, varType);
-                                    recurse++;
-                                    string statement = varName + " = " + ConvertTokens(tokensAfter) + " ;";
-                                    recurse--;
-                                    AddToInitializeMethod(statement);
-                                    outTokens.Clear();
-                                    break;
-                                }
-                                else
-                                {
-                                    //assume float
-                                    varType = "double";
-                                }
-                            }
-                            else
-                            {
-                                //assume float
-                                varType = "double";
-                            }
-                        }
+                            tokens[idxColor] = tokens[idxColor].ToProper();
                     }
                 }
                 //ta. indicator declaration?
-                else if (token == "ta" && nextToken == ".")
+                else if (token == "ta.")
                 {
+                    LineMode = LineMode.Series;
+
+                    //map a ta lib indicator to a WL indicator, and advance the token counter to the next token that needs to be processed
                     i++;
-                    mapIndicator = true;
-                }
-                //map this token as an indicator
-                else if (mapIndicator)
-                {
-                    if (!timeSeriesVars.Contains(varName))
-                        timeSeriesVars.Add(varName);
-                    mapIndicator = false;
-                    indicatorMapped = true;
-                    if (pvIndicators.ContainsKey(token))
+                    string indName = tokens[i];
+                    i++;
+                    if (tokens[i] != "(")
+                        throw new InvalidOperationException("Expected opening parenthesis.");
+                    i++;
+                    List<string> argTokens = ExtractArgumentTokens(tokens, i);
+                    i--;
+
+                    //standard mapping
+                    if (pvIndicators.ContainsKey(indName))
                     {
-                        string wlInd = pvIndicators[token];
-                        outTokens.Add(wlInd + ".Series");
-                        varType = wlInd;
+                        string wlInd = pvIndicators[indName];
+                        string args = ConvertTokens(argTokens);
+                        outTokens.Add(wlInd + ".Series(" + args + ")");
                     }
                     else
                     {
-                        //special indicator handlers
-                        bool handled = false;
-                        List<string> tokensAfter = GetTokensAfter("=", tokens);
-                        if (tokensAfter[0] == "ta" && tokensAfter[1] == ".")
+                        //DKK customized mappings
+                        indParams = ExtractParameterTokens(argTokens);
+                        switch(indName)
                         {
-                            recurse++;
-                            indParams = ExtractParameterTokens(tokensAfter);
-                            switch (tokensAfter[2])
-                            {
-                                case "alma":
-                                    {
-                                        handled = true;
-                                        AddToUsing("WealthLab.AdvancedSmoothers");
-                                        InjectIndicator(varName, "ALMA", 0, 1, 3, 2, "0");
-                                    }
-                                    break;
-                                case "atr":
-                                    {
-                                        handled = true;
-                                        InjectIndicator(varName, "ATR", "bars", 0);
-                                    }
-                                    break;
-                                case "correlation":
-                                    {
-                                        handled = true;
-                                        InjectIndicator(varName, "Corr", 0, 1, 2);
-                                    }
-                                    break;
-                                case "crossover":
-                                    {
-                                        handled = true;
-                                        DeclareVar(varName, "TimeSeries");
-                                        string p1 = ConvertTokens(indParams[0]);
-                                        string p2 = ConvertTokens(indParams[1]);
-                                        string s = varName + " = " + p1.Trim() + ".CrossOver(" + p2 + ");";
-                                        AddToInitializeMethod(s);
-                                    }
-                                    break;
-                                case "crossunder":
-                                    {
-                                        handled = true;
-                                        DeclareVar(varName, "TimeSeries");
-                                        string p1 = ConvertTokens(indParams[0]);
-                                        string p2 = ConvertTokens(indParams[1]);
-                                        string s = varName + " = " + p1.Trim() + ".CrossUnder(" + p2 + ");";
-                                        AddToInitializeMethod(s);
-                                    }
-                                    break;
-                                case "cross":
-                                    {
-                                        handled = true;
-                                        DeclareVar(varName, "TimeSeries");
-                                        string p1 = ConvertTokens(indParams[0]);
-                                        string p2 = ConvertTokens(indParams[1]);
-                                        string s = varName + " = " + p1.Trim() + ".CrossOver(" + p2 + ") || " + p1.Trim() + ".CrossUnder(" + p2 + ");";
-                                        AddToInitializeMethod(s);
-                                    }
-                                    break;
-                                case "cum":
-                                    {
-                                        handled = true;
-                                        DeclareVar(varName, "TimeSeries");
-                                        string p1 = ConvertTokens(indParams[0]);
-                                        string s = varName + " = " + p1.Trim() + ".Sum();";
-                                        AddToInitializeMethod(s);
-                                    }
-                                    break;
-                                case "falling":
-                                    {
-                                        handled = true;
-                                        DeclareVar(varName, "TimeSeries");
-                                        string p1 = ConvertTokens(indParams[0]);
-                                        string p2 = ConvertTokens(indParams[1]);
-                                        string s = varName + " = " + p1 + " < " + p1 + " >> " + p2 + ";";
-                                        AddToInitializeMethod(s);
-                                    }
-                                    break;
-                                case "rising":
-                                    {
-                                        handled = true;
-                                        DeclareVar(varName, "TimeSeries");
-                                        string p1 = ConvertTokens(indParams[0]);
-                                        string p2 = ConvertTokens(indParams[1]);
-                                        string s = varName + " = " + p1 + " > " + p1 + " >> " + p2 + ";";
-                                        AddToInitializeMethod(s);
-                                    }
-                                    break;
-                                case "highest":
-                                    {
-                                        handled = true;
-
-                                        //can have one or two parameters
-                                        if (indParams.Count == 1)
-                                            InjectIndicator(varName, "Highest", "bars.High", 0);
-                                        else
-                                            InjectIndicator(varName, "Highest", 0, 1);
-                                    }
-                                    break;
-                                case "lowest":
-                                    {
-                                        handled = true;
-
-                                        //can have one or two parameters
-                                        if (indParams.Count == 1)
-                                            InjectIndicator(varName, "Lowest", "bars.Low", 0);
-                                        else
-                                            InjectIndicator(varName, "Lowest", 0, 1);
-                                    }
-                                    break;
-                                case "highestbars":
-                                    {
-                                        handled = true;
-                                        DeclareVar(varName, "TimeSeries");
-                                        string p1 = ConvertTokens(indParams[0]);
-
-                                        //can have one or two parameters
-                                        if (indParams.Count == 1)
-                                        {
-                                            string s = varName + " = bars.High.HighestBars(" + p1 + ");";
-                                            AddToInitializeMethod(s);
-                                        }
-                                        else
-                                        {
-                                            string p2 = ConvertTokens(indParams[1]);
-                                            string s = varName + " = " + p1.Trim() + ".HighestBars(" + p2 + ");";
-                                            AddToInitializeMethod(s);
-                                        }
-                                    }
-                                    break;
-                                case "lowestbars":
-                                    {
-                                        handled = true;
-                                        DeclareVar(varName, "TimeSeries");
-                                        string p1 = ConvertTokens(indParams[0]);
-
-                                        //can have one or two parameters
-                                        if (indParams.Count == 1)
-                                        {
-                                            string s = varName + " = bars.Low.LowestBars(" + p1 + ");";
-                                            AddToInitializeMethod(s);
-                                        }
-                                        else
-                                        {
-                                            string p2 = ConvertTokens(indParams[1]);
-                                            string s = varName + " = " + p1.Trim() + ".LowestBars(" + p2 + ");";
-                                            AddToInitializeMethod(s);
-                                        }
-                                    }
-                                    break;
-                                case "hma":
-                                    {
-                                        handled = true;
-                                        AddToUsing("WealthLab.AdvancedSmoothers");
-                                        InjectIndicator(varName, "HMA", 0, 1);
-                                    }
-                                    break;
-                            }
-                            recurse--;
-                        }
-                        if (!handled)
-                            throw new ArgumentException("Could not find matching WL indicator for " + token);
-                        else
-                        {
-                            outTokens.Clear();
-                            indicatorMapped = true;
-                            break; //completes line processing
+                            case "alma":
+                                AddToUsing("WealthLab.AdvancedSmoothers");
+                                outTokens.Add(GenerateInlineIndicator("ALMA", 0, 1, 3, 2, "0"));
+                                break;
+                            case "atr":
+                                outTokens.Add(GenerateInlineIndicator("ATR", "bars", 0));
+                                break;
+                            case "crossover":
+                                {
+                                    string source1 = ConvertTokens(indParams[0]).Trim();
+                                    string source2 = ConvertTokens(indParams[1]).Trim();
+                                    outTokens.Add(source1 + ".CrossOver(" + source2 + ")");
+                                }
+                                break;
+                            case "crossunder":
+                                {
+                                    string source1 = ConvertTokens(indParams[0]).Trim();
+                                    string source2 = ConvertTokens(indParams[1]).Trim();
+                                    outTokens.Add(source1 + ".CrossUnder(" + source2 + ")");
+                                }
+                                break;
+                            case "cross":
+                                {
+                                    string source1 = ConvertTokens(indParams[0]).Trim();
+                                    string source2 = ConvertTokens(indParams[1]).Trim();
+                                    outTokens.Add(source1 + ".CrossOver(" + source2 + ") | " + source1 + ".CrossUnder(" + source2 + ")");
+                                }
+                                break;
+                            case "cum":
+                                {
+                                    string source = ConvertTokens(indParams[0]).Trim();
+                                    outTokens.Add(source + ".Sum()");
+                                }
+                                break;
+                            case "falling":
+                                {
+                                    string source = ConvertTokens(indParams[0]).Trim();
+                                    string lookback = ConvertTokens(indParams[1]);
+                                    outTokens.Add(source + " < " + "(" + source + " >> " + lookback + ")");
+                                }
+                                break;
+                            case "rising":
+                                {
+                                    string source = ConvertTokens(indParams[0]).Trim();
+                                    string lookback = ConvertTokens(indParams[1]);
+                                    outTokens.Add(source + " > " + "(" + source + " >> " + lookback + ")");
+                                }
+                                break;
+                            case "highest":
+                                {
+                                    string source = indParams.Count == 1 ? "bars.High" : ConvertTokens(indParams[0]);
+                                    string period = indParams.Count == 1 ? ConvertTokens(indParams[0]) : ConvertTokens(indParams[1]);
+                                    outTokens.Add("Highest.Series(" + source + "," + period + ")");
+                                }
+                                break;
+                            case "lowest":
+                                {
+                                    string source = indParams.Count == 1 ? "bars.Low" : ConvertTokens(indParams[0]);
+                                    string period = indParams.Count == 1 ? ConvertTokens(indParams[0]) : ConvertTokens(indParams[1]);
+                                    outTokens.Add("Lowest.Series(" + source + "," + period + ")");
+                                }
+                                break;
+                            case "highestbars":
+                                {
+                                    string source = indParams.Count == 1 ? "bars.High" : ConvertTokens(indParams[0]).Trim();
+                                    string period = indParams.Count == 1 ? ConvertTokens(indParams[0]) : ConvertTokens(indParams[1]);
+                                    outTokens.Add(source + ".HighestBars(" + period + ")");
+                                }
+                                break;
+                            case "lowestbars":
+                                {
+                                    string source = indParams.Count == 1 ? "bars.Low" : ConvertTokens(indParams[0]).Trim();
+                                    string period = indParams.Count == 1 ? ConvertTokens(indParams[0]) : ConvertTokens(indParams[1]);
+                                    outTokens.Add(source + ".LowestBars(" + period + ")");
+                                }
+                                break;
+                            case "hma":
+                                AddToUsing("WealthLab.AdvancedSmoothers");
+                                outTokens.Add(GenerateInlineIndicator("HMA", 0, 1));
+                                break;
                         }
                     }
                 }
@@ -695,10 +654,13 @@ namespace WealthLab.Backtest
                     outTokens.Add("!");
                 }
                 //OHLCV param values
-                else if (ohclv.Contains(token) && (parensCount > 0 || recurse > 0))
+                else if (ohclv.Contains(token))
                 {
-                    string suffix = indicatorMapped || recurse > 0 ? "" : "[idx]";
-                    outTokens.Add("bars." + token.ToProper() + suffix);
+                    string outToken = token.ToProper();
+                    if (LineMode == LineMode.Scalar)
+                        outToken += "[idx]";
+                    outToken = "bars." + outToken;
+                    outTokens.Add(outToken);
                 }
                 //number?
                 else if (IsNumeric(token))
@@ -712,76 +674,11 @@ namespace WealthLab.Backtest
                     else
                         outTokens.Add(token);
                 }
-                //if statement
-                else if (token == "if")
+                else if (timeSeriesVars.Contains(token) && recurse == 0 && !indicatorMapped && LineMode != LineMode.Series)
                 {
-                    //handle Pine Script if assignment syntax
-                    if (prevToken == "=")
-                    {
-                        varName = tokens[0];
-                        ifAssignment = varName;
-                        outTokens.Clear();
-                    }
-
-                    needsSemicolon = false;
-                    outTokens.Add(token);
-                    ifAdded = true;
-
-                    //add parens if not there
-                    if (!tokens.Contains("("))
-                    {
-                        int insertIdx = i + 1;
-                        if (tokens[0] == "else")
-                            insertIdx++;
-                        tokens.Insert(insertIdx, "(");
-                        tokens.Add(")");
-                    }
+                    outTokens.Add(token + "[idx]");
                 }
-                else if (token == "else")
-                {
-                    if (ifAssigned != null)
-                    {
-                        elseAssignment = ifAssigned;
-                        ifAssigned = null;
-                    }
-
-                    needsSemicolon = false;
-                    outTokens.Add(token);
-                    ifAdded = true;
-
-                    //add parens if not there
-                    if (!tokens.Contains("("))
-                    {
-                        tokens.Insert(i + 1, "(");
-                        tokens.Add(")");
-                    }
-                }
-                //strategy entry
-                else if (token == "strategy" && nextToken == "." && nextNextToken == "entry")
-                {
-                    string sigName = tokens[i + 4];
-                    sigName = sigName.Replace("\"", "");
-                    bool isLong = tokens[i + 8] == "long";
-                    string tt = isLong ? "Buy" : "Short";
-                    string pt = "PlaceTrade(bars, TransactionType." + tt + ", OrderType.Market, 0, \"" + sigName + "\");";
-                    outTokens.Add(pt);
-
-                    //add the code to close opposing order
-                    if (isLong)
-                    {
-                        AddToExecuteMethod("if (HasOpenPosition(bars, PositionType.Short))");
-                        AddToExecuteMethod("   PlaceTrade(bars, TransactionType.Cover, OrderType.Market);");
-                    }
-                    else
-                    {
-                        AddToExecuteMethod("if (HasOpenPosition(bars, PositionType.Long))");
-                        AddToExecuteMethod("   PlaceTrade(bars, TransactionType.Sell, OrderType.Market);");
-                    }
-
-                    break; //stop token processing on this line
-                }
-                //needs time series index?
-                else if (timeSeriesVars.Contains(token) && recurse == 0 && !indicatorMapped)
+                else if (timeSeriesVars.Contains(token) && LineMode == LineMode.Scalar)
                 {
                     outTokens.Add(token + "[idx]");
                 }
@@ -806,11 +703,6 @@ namespace WealthLab.Backtest
             //if we have a line, process it
             if (outTokens.Count > 0)
             {
-                //add semicolon
-                if (needsSemicolon && recurse == 0)
-                    if (outTokens.Count == 0 || !outTokens[outTokens.Count - 1].EndsWith(";"))
-                        outTokens.Add(";");
-
                 //build and add output line
                 string execOut = "";
                 foreach (string ot in outTokens)
@@ -863,6 +755,23 @@ namespace WealthLab.Backtest
                     combined.Add(token);
             }
             return combined;
+        }
+
+        //combine ta. into one token
+        private List<string> CombineLibTokens(List<string> tokens)
+        {
+            List<string> outTokens = new List<string>();
+            for(int n = 0; n < tokens.Count; n++)
+            {
+                if (tokens[n] == "ta" && n < tokens.Count - 1 && tokens[n + 1] == ".")
+                {
+                    outTokens.Add("ta.");
+                    n++;
+                }
+                else
+                    outTokens.Add(tokens[n]);
+            }
+            return outTokens;
         }
 
         //split a line into tokens
@@ -1012,6 +921,8 @@ namespace WealthLab.Backtest
         //add a line to initialize
         private void AddToInitializeMethod(string line)
         {
+            initializeBody.AddRange(prevComments);
+            prevComments.Clear();
             line = "         " + line.Trim();
             initializeBody.Add(line);
         }
@@ -1019,6 +930,9 @@ namespace WealthLab.Backtest
         //add a line to execute method
         private void AddToExecuteMethod(string line)
         {
+            executeBody.AddRange(prevComments);
+            prevComments.Clear();
+
             //pre-process indentation
             line = "         " + line;
             for (int i = 0; i < indentLevel; i++)
@@ -1066,9 +980,10 @@ namespace WealthLab.Backtest
 
             //remove tokens "(" and preceding
             int idx = tokens.IndexOf("(");
-            if (idx == -1)
-                return result;
-            arguments.AddRange(tokens.Skip(idx + 1));
+            if (idx >= 0 && tokens[tokens.Count - 1] == ")")
+                arguments.AddRange(tokens.Skip(idx + 1));
+            else
+                arguments.AddRange(tokens);
 
             //remove final ")"
             if (arguments.Count == 0)
@@ -1140,6 +1055,28 @@ namespace WealthLab.Backtest
             }
             indCreate += ");";
             AddToInitializeMethod(indCreate);
+        }
+
+        //generate an inline indicator declaration
+        private string GenerateInlineIndicator(string indName, params object[] arguments)
+        {
+            string indOut = indName + ".Series(";
+            for(int n = 0; n < arguments.Length; n++)
+            {
+                object obj = arguments[n];
+                if (obj is string)
+                    indOut += (string)obj;
+                else
+                {
+                    int pIdx = (int)obj;
+                    string paramText = ConvertTokens(indParams[pIdx]);
+                    indOut += paramText;
+                }
+                if (n != arguments.Length - 1)
+                    indOut += ", ";
+            }
+            indOut += ")";
+            return indOut;
         }
 
         //declare a variable
@@ -1229,6 +1166,29 @@ namespace WealthLab.Backtest
             }
         }
 
+        //extract tokens until a closing parenthesis is found
+        private List<string> ExtractArgumentTokens(List<string> tokens, int idx)
+        {
+            int parens = 0;
+            List<string> argTokens = new List<string>();
+            while(idx < tokens.Count)
+            {
+                string token = tokens[idx];
+                tokens.RemoveAt(idx);
+                if (token == "(")
+                    parens++;
+                else if (token == ")")
+                {
+                    if (parens > 0)
+                        parens--;
+                    else
+                        break;
+                }
+                argTokens.Add(token);
+            }
+            return argTokens;
+        }
+
         //variables
         private bool indicatorMapped = false;
         private string ifAssignment = null;
@@ -1253,5 +1213,12 @@ namespace WealthLab.Backtest
         private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" }, { "barssince", "BarsSince" },
             { "bbw", "BBWidth" }, { "cci", "CCI" }, { "cmo", "CMO" }, { "cog", "CG" }, { "correlation", "Corr" }, { "dev", "MeanAbsDev" } };
         private Dictionary<string, Parameter> _parameters = new Dictionary<string, Parameter>();
+        private static List<string> taIndicators = new List<string>() { "ema", "sma", "rsi", "macd", "stoch", "atr", "adx", "adxdi", "dmi", "wma", "vwma", "hma", "cmo", "mom", "roc",
+            "stdev", "variance", "highest", "lowest", "rma", "crossover", "crossunder" };
+        private string paneTag = "Price";
+        private List<string> prevComments = new List<string>();
     }
+
+    //current processing line mode
+    public enum LineMode { Scalar, Series };
 }
