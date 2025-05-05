@@ -109,7 +109,16 @@ namespace WealthLab.Backtest
                     if (tokens.Count > 0)
                     {
                         string varVal = tokens[0];
-                        if (varVal == "color")
+                        if (varVal == "input")
+                        {
+                            varType = "Parameter";
+                            ParameterType pt = ParameterType.Double;
+                            if (tokens[2] == "int")
+                                pt = ParameterType.Int32;
+                            CreateParameter(varName, pt, tokens);
+                            continue;
+                        }
+                        else if (varVal == "color")
                             varType = "WLColor";
                         else if (varVal == "true" || varVal == "false")
                             varType = "bool";
