@@ -28,6 +28,8 @@ namespace WealthLab.Backtest
             //process lines
             for (int n = 0; n < lines.Count; n++)
             {
+                ifStatement = false;
+
                 //obtain line
                 string line = lines[n];
                 LineMode = LineMode.Scalar;
@@ -69,6 +71,9 @@ namespace WealthLab.Backtest
                 {
                     string oldStyle = " " + taInd + "(";
                     string newStyle = " ta." + taInd + "(";
+                    line = line.Replace(oldStyle, newStyle);
+                    oldStyle = "(" + taInd + "(";
+                    newStyle = "( ta." + taInd + "(";
                     line = line.Replace(oldStyle, newStyle);
                 }
 
@@ -298,6 +303,7 @@ namespace WealthLab.Backtest
                 else if (token == "if")
                 {
                     //if statement
+                    ifStatement = true;
                     LineMode = LineMode.Scalar;
 
                     //parens?
@@ -461,7 +467,6 @@ namespace WealthLab.Backtest
             {
                 tokens.Insert(0, "=");
                 tokens.Insert(0, ifAssignment);
-                ifAssigned = ifAssignment;
                 ifAssignment = null;
             }
             if (elseAssignment != null)
@@ -523,6 +528,7 @@ namespace WealthLab.Backtest
                 //ta. indicator declaration?
                 else if (token == "ta.")
                 {
+                    LineMode ls = LineMode;
                     LineMode = LineMode.Series;
 
                     //map a ta lib indicator to a WL indicator, and advance the token counter to the next token that needs to be processed
@@ -536,109 +542,126 @@ namespace WealthLab.Backtest
                     i--;
 
                     //standard mapping
+                    string timeSeriesString = null;
                     if (pvIndicators.ContainsKey(indName))
                     {
                         string wlInd = pvIndicators[indName];
                         string args = ConvertTokens(argTokens);
-                        outTokens.Add(wlInd + ".Series(" + args + ")");
+                        timeSeriesString = wlInd + ".Series(" + args + ")";
                     }
                     else
                     {
                         //DKK customized mappings
-                        indParams = ExtractParameterTokens(argTokens);
+                        indParams = ExtractParameterTokens(argTokens, true);
                         switch(indName)
                         {
                             case "alma":
                                 AddToUsing("WealthLab.AdvancedSmoothers");
-                                outTokens.Add(GenerateInlineIndicator("ALMA", 0, 1, 3, 2, "0"));
+                                timeSeriesString = GenerateInlineIndicator("ALMA", 0, 1, 3, 2, "0");
                                 break;
                             case "atr":
-                                outTokens.Add(GenerateInlineIndicator("ATR", "bars", 0));
+                                timeSeriesString = GenerateInlineIndicator("ATR", "bars", 0);
                                 break;
                             case "crossover":
                                 {
                                     string source1 = ConvertTokens(indParams[0]).Trim();
                                     string source2 = ConvertTokens(indParams[1]).Trim();
-                                    outTokens.Add(source1 + ".CrossOver(" + source2 + ")");
+                                    timeSeriesString = source1 + ".CrossOver(" + source2 + ")";
                                 }
                                 break;
                             case "crossunder":
                                 {
                                     string source1 = ConvertTokens(indParams[0]).Trim();
                                     string source2 = ConvertTokens(indParams[1]).Trim();
-                                    outTokens.Add(source1 + ".CrossUnder(" + source2 + ")");
+                                    timeSeriesString = source1 + ".CrossUnder(" + source2 + ")";
                                 }
                                 break;
                             case "cross":
                                 {
                                     string source1 = ConvertTokens(indParams[0]).Trim();
                                     string source2 = ConvertTokens(indParams[1]).Trim();
-                                    outTokens.Add(source1 + ".CrossOver(" + source2 + ") | " + source1 + ".CrossUnder(" + source2 + ")");
+                                    timeSeriesString = source1 + ".CrossOver(" + source2 + ") | " + source1 + ".CrossUnder(" + source2 + ")";
                                 }
                                 break;
                             case "cum":
                                 {
                                     string source = ConvertTokens(indParams[0]).Trim();
-                                    outTokens.Add(source + ".Sum()");
+                                    timeSeriesString = source + ".Sum()";
                                 }
                                 break;
                             case "falling":
                                 {
                                     string source = ConvertTokens(indParams[0]).Trim();
                                     string lookback = ConvertTokens(indParams[1]);
-                                    outTokens.Add(source + " < " + "(" + source + " >> " + lookback + ")");
+                                    timeSeriesString = source + " < " + "(" + source + " >> " + lookback + ")";
                                 }
                                 break;
                             case "rising":
                                 {
                                     string source = ConvertTokens(indParams[0]).Trim();
                                     string lookback = ConvertTokens(indParams[1]);
-                                    outTokens.Add(source + " > " + "(" + source + " >> " + lookback + ")");
+                                    timeSeriesString = source + " > " + "(" + source + " >> " + lookback + ")";
                                 }
                                 break;
                             case "highest":
                                 {
                                     string source = indParams.Count == 1 ? "bars.High" : ConvertTokens(indParams[0]);
                                     string period = indParams.Count == 1 ? ConvertTokens(indParams[0]) : ConvertTokens(indParams[1]);
-                                    outTokens.Add("Highest.Series(" + source + "," + period + ")");
+                                    timeSeriesString = "Highest.Series(" + source + "," + period + ")";
                                 }
                                 break;
                             case "lowest":
                                 {
                                     string source = indParams.Count == 1 ? "bars.Low" : ConvertTokens(indParams[0]);
                                     string period = indParams.Count == 1 ? ConvertTokens(indParams[0]) : ConvertTokens(indParams[1]);
-                                    outTokens.Add("Lowest.Series(" + source + "," + period + ")");
+                                    timeSeriesString = "Lowest.Series(" + source + "," + period + ")";
                                 }
                                 break;
                             case "highestbars":
                                 {
                                     string source = indParams.Count == 1 ? "bars.High" : ConvertTokens(indParams[0]).Trim();
                                     string period = indParams.Count == 1 ? ConvertTokens(indParams[0]) : ConvertTokens(indParams[1]);
-                                    outTokens.Add(source + ".HighestBars(" + period + ")");
+                                    timeSeriesString = source + ".HighestBars(" + period + ")";
                                 }
                                 break;
                             case "lowestbars":
                                 {
                                     string source = indParams.Count == 1 ? "bars.Low" : ConvertTokens(indParams[0]).Trim();
                                     string period = indParams.Count == 1 ? ConvertTokens(indParams[0]) : ConvertTokens(indParams[1]);
-                                    outTokens.Add(source + ".LowestBars(" + period + ")");
+                                    timeSeriesString = source + ".LowestBars(" + period + ")";
                                 }
                                 break;
                             case "hma":
                                 AddToUsing("WealthLab.AdvancedSmoothers");
-                                outTokens.Add(GenerateInlineIndicator("HMA", 0, 1));
+                                timeSeriesString = GenerateInlineIndicator("HMA", 0, 1);
                                 break;
                         }
                     }
+
+                    //restore LineMode
+                    LineMode = ls;
+
+                    //inject generated time indictor definition
+                    if (ifStatement)
+                    {
+                        //define a new TimeSeries variable for this indicator, and use variable name here instead of indicator definition
+                        varName = "ts" + dynamicVarCount;
+                        varType = "TimeSeries";
+                        dynamicVarCount++;
+                        DeclareVar(varName, "TimeSeries");
+                        string tsInit = varName + " = " + timeSeriesString + ";";
+                        AddToInitializeMethod(tsInit);
+                        outTokens.Add(varName + "[idx]");
+                    }
+                    else
+                        outTokens.Add(timeSeriesString);
                 }
                 else if (token == "(")
                 {
-                    parensCount++;
                     outTokens.Add("(");
                 }
                 else if (token == ")")
                 {
-                    parensCount--;
                     outTokens.Add(")");
                 }
                 else if (token == "and")
@@ -921,6 +944,7 @@ namespace WealthLab.Backtest
         //add a line to initialize
         private void AddToInitializeMethod(string line)
         {
+            line = line.Replace("[idx]", "");
             initializeBody.AddRange(prevComments);
             prevComments.Clear();
             line = "         " + line.Trim();
@@ -973,14 +997,14 @@ namespace WealthLab.Backtest
         }
 
         //given a list of tokens, extract lists that represent a list of parameters, ie (P1, P2, P3) would return three lists of tokens
-        private List<List<string>> ExtractParameterTokens(List<string> tokens)
+        private List<List<string>> ExtractParameterTokens(List<string> tokens, bool avoidSkip = false)
         {
             List<string> arguments = new List<string>();
             List<List<string>> result = new List<List<string>>();
 
             //remove tokens "(" and preceding
             int idx = tokens.IndexOf("(");
-            if (idx >= 0 && tokens[tokens.Count - 1] == ")")
+            if (idx >= 0 && tokens[tokens.Count - 1] == ")" && !avoidSkip)
                 arguments.AddRange(tokens.Skip(idx + 1));
             else
                 arguments.AddRange(tokens);
@@ -988,7 +1012,7 @@ namespace WealthLab.Backtest
             //remove final ")"
             if (arguments.Count == 0)
                 return result;
-            if (arguments[arguments.Count - 1] == ")")
+            if (arguments[arguments.Count - 1] == ")" && !avoidSkip)
                 arguments.RemoveAt(arguments.Count - 1);
 
             //start processing tokens
@@ -1192,11 +1216,8 @@ namespace WealthLab.Backtest
         //variables
         private bool indicatorMapped = false;
         private string ifAssignment = null;
-        private string ifAssigned = null;
         private string elseAssignment = null;
-        private bool ifAdded = false;
         private int recurse = 0;
-        private int parensCount = 0;
         private int indentLevel = 0;
         private List<string> varsDeclared = new List<string>();
         private Dictionary<string, string> varTypes = new Dictionary<string, string>();
@@ -1217,6 +1238,8 @@ namespace WealthLab.Backtest
             "stdev", "variance", "highest", "lowest", "rma", "crossover", "crossunder" };
         private string paneTag = "Price";
         private List<string> prevComments = new List<string>();
+        private bool ifStatement = false;
+        private int dynamicVarCount = 1;
     }
 
     //current processing line mode
