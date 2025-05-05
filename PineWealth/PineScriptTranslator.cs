@@ -96,6 +96,28 @@ namespace WealthLab.Backtest
                 string nextToken = tokens.Count < 2 ? null : tokens[1];
                 string nextNextToken = tokens.Count < 3 ? null : tokens[2];
 
+                //pre-process, inject assignment from previous if-assignment
+                if (ifAssignment)
+                {
+                    string varType = DeduceType(ifVarName, tokens);
+                    DeclareVar(ifVarName, varType);
+                    tokens.Insert(0, "=");
+                    tokens.Insert(0, ifVarName);
+                    ifAssignment = false;
+                }
+
+                //pre-process if-assignment statements
+                if (nextToken == "=" && nextNextToken == "if")
+                {
+                    ifAssignment = true;
+                    ifVarName = tokens[0];
+                    tokens.RemoveAt(0);
+                    tokens.RemoveAt(0);
+                    token = tokens[0];
+                    nextToken = tokens.Count < 2 ? null : tokens[1];
+                    nextNextToken = tokens.Count < 3 ? null : tokens[2];
+                }
+
                 //process
                 if (nextToken == "=")
                 {
@@ -107,101 +129,9 @@ namespace WealthLab.Backtest
                     tokens.RemoveAt(0);
 
                     //deduce variable type
-                    if (tokens.Count > 0)
-                    {
-                        string varVal = tokens[0];
-                        if (varVal == "input")
-                        {
-                            varType = "Parameter";
-                            ParameterType pt = ParameterType.Double;
-                            switch(tokens[2])
-                            {
-                                case "int":
-                                    pt = ParameterType.Int32;
-                                    break;
-                                case "source":
-                                    pt = ParameterType.PriceComponent;
-                                    break;
-                            }
-                            if (tokens[2] == "int")
-                                pt = ParameterType.Int32;
-                            CreateParameter(varName, pt, tokens);
-                            continue;
-                        }
-                        else if (varVal == "color")
-                            varType = "WLColor";
-                        else if (varVal == "true" || varVal == "false")
-                            varType = "bool";
-                        else if (varVal.StartsWith("\""))
-                            varType = "string";
-                        else if (tokens.Contains("ta."))
-                        {
-                            varType = "TimeSeries";
-                            LineMode = LineMode.Series;
-                        }
-                        else if (tokens.Intersect(ohclv).Any())
-                        {
-                            varType = "TimeSeries";
-                            LineMode = LineMode.Series;
-                        }
-                        else if (IsNumeric(varVal))
-                        {
-                            //numeric value - default to double
-                            varType = "double";
-                        }
-                        else
-                        {
-                            //see if it's a mathematical operation, and if so does it involve series?
-                            List<string> tokensAfter = GetTokensAfter("=", tokens);
-                            bool isMath = false;
-                            foreach (string tokenOp in tokensAfter)
-                                if (mathOps.Contains(tokenOp))
-                                {
-                                    isMath = true;
-                                    break;
-                                }
-                            if (isMath)
-                            {
-                                //determine if any of the terms are series
-                                bool hasSeriesTerm = false;
-                                for (int ta = 0; ta < tokensAfter.Count; ta++)
-                                {
-                                    string ta0 = tokensAfter[ta];
-                                    if (ohclv.Contains(ta0))
-                                        hasSeriesTerm = true;
-                                    else if (ta0 == "ta.")
-                                        hasSeriesTerm = true;
-                                    if (hasSeriesTerm)
-                                        break;
-                                }
-
-                                if (hasSeriesTerm)
-                                {
-                                    //TimeSeries
-                                    varType = "TimeSeries";
-                                    LineMode = LineMode.Series;
-
-                                    //process remainder of tokens and put in initialize
-                                    DeclareVar(varName, varType);
-                                    recurse++;
-                                    string statement = varName + " = " + ConvertTokens(tokensAfter) + " ;";
-                                    recurse--;
-                                    AddToInitializeMethod(statement);
-                                    break;
-                                }
-                                else
-                                {
-                                    //assume float
-                                    varType = "double";
-                                }
-                            }
-                            else
-                            {
-                                //assume float
-                                varType = "double";
-                            }
-                        }
-                    }
+                    varType = DeduceType(varName, tokens);
+                    if (varType == null)
+                        continue;
 
                     //remember time series types
                     if (varType == "TimeSeries")
@@ -335,6 +265,28 @@ namespace WealthLab.Backtest
                     //compose line
                     string ifLine = ConvertTokens(tokens);
                     AddToExecuteMethod(ifLine);
+                    AddToExecuteMethod("{");
+                    indentLevel++;
+                }
+                else if (token == "else")
+                {
+                    //else statement
+                    LineMode = LineMode.Scalar;
+
+                    //following if?
+                    if (nextToken == "if")
+                    {
+                        //parens?
+                        if (nextNextToken != "(")
+                        {
+                            tokens.Insert(2, "(");
+                            tokens.Add(")");
+                        }
+                    }
+
+                    //compose line
+                    string elseLine = ConvertTokens(tokens);
+                    AddToExecuteMethod(elseLine);
                     AddToExecuteMethod("{");
                     indentLevel++;
                 }
@@ -480,20 +432,6 @@ namespace WealthLab.Backtest
             string varName = "";
             string varType = "var";
             indicatorMapped = false;
-
-            //inject implied assignments from if/else-assignment
-            if (ifAssignment != null)
-            {
-                tokens.Insert(0, "=");
-                tokens.Insert(0, ifAssignment);
-                ifAssignment = null;
-            }
-            if (elseAssignment != null)
-            {
-                tokens.Insert(0, "=");
-                tokens.Insert(0, elseAssignment);
-                elseAssignment = null;
-            }
 
             //process each token
             for (int i = 0; i < tokens.Count; i++)
@@ -1140,12 +1078,6 @@ namespace WealthLab.Backtest
         //create a strategy parameter
         private void CreateParameter(string paramName, ParameterType pt, List<string> tokens)
         {
-            //create parameter instance for tracking
-            Parameter p = new Parameter();
-            p.Type = pt;
-            p.Name = paramName;
-            _parameters[paramName] = p;
-
             //source parameters are not turned into parameters
             if (pt == ParameterType.PriceComponent)
             {
@@ -1158,6 +1090,12 @@ namespace WealthLab.Backtest
                 AddToInitializeMethod(initLine);
                 return;
             }
+
+            //create parameter instance for tracking
+            Parameter p = new Parameter();
+            p.Type = pt;
+            p.Name = paramName;
+            _parameters[paramName] = p;
 
             //create declaration statement
             DeclareVar(paramName, "Parameter");
@@ -1250,10 +1188,110 @@ namespace WealthLab.Backtest
             return argTokens;
         }
 
+        //deduce an object's type
+        private string DeduceType(string varName, List<string> tokens)
+        {
+            string varType = "double";
+            if (tokens.Count > 0)
+            {
+                string varVal = tokens[0];
+                if (varVal == "input")
+                {
+                    varType = "Parameter";
+                    ParameterType pt = ParameterType.Double;
+                    switch (tokens[2])
+                    {
+                        case "int":
+                            pt = ParameterType.Int32;
+                            break;
+                        case "source":
+                            pt = ParameterType.PriceComponent;
+                            break;
+                    }
+                    if (tokens[2] == "int")
+                        pt = ParameterType.Int32;
+                    CreateParameter(varName, pt, tokens);
+                    return null;
+                }
+                else if (varVal == "color")
+                    varType = "WLColor";
+                else if (varVal == "true" || varVal == "false")
+                    varType = "bool";
+                else if (varVal.StartsWith("\""))
+                    varType = "string";
+                else if (tokens.Contains("ta."))
+                {
+                    varType = "TimeSeries";
+                    LineMode = LineMode.Series;
+                }
+                else if (tokens.Intersect(ohclv).Any())
+                {
+                    varType = "TimeSeries";
+                    LineMode = LineMode.Series;
+                }
+                else if (IsNumeric(varVal))
+                {
+                    //numeric value - default to double
+                    varType = "double";
+                }
+                else
+                {
+                    //see if it's a mathematical operation, and if so does it involve series?
+                    List<string> tokensAfter = GetTokensAfter("=", tokens);
+                    bool isMath = false;
+                    foreach (string tokenOp in tokensAfter)
+                        if (mathOps.Contains(tokenOp))
+                        {
+                            isMath = true;
+                            break;
+                        }
+                    if (isMath)
+                    {
+                        //determine if any of the terms are series
+                        bool hasSeriesTerm = false;
+                        for (int ta = 0; ta < tokensAfter.Count; ta++)
+                        {
+                            string ta0 = tokensAfter[ta];
+                            if (ohclv.Contains(ta0))
+                                hasSeriesTerm = true;
+                            else if (ta0 == "ta.")
+                                hasSeriesTerm = true;
+                            if (hasSeriesTerm)
+                                break;
+                        }
+
+                        if (hasSeriesTerm)
+                        {
+                            //TimeSeries
+                            varType = "TimeSeries";
+                            LineMode = LineMode.Series;
+
+                            //process remainder of tokens and put in initialize
+                            DeclareVar(varName, varType);
+                            recurse++;
+                            string statement = varName + " = " + ConvertTokens(tokensAfter) + " ;";
+                            recurse--;
+                            AddToInitializeMethod(statement);
+                            return varType;
+                        }
+                        else
+                        {
+                            //assume float
+                            varType = "double";
+                        }
+                    }
+                    else
+                    {
+                        //assume float
+                        varType = "double";
+                    }
+                }
+            }
+            return varType;
+        }
+
         //variables
         private bool indicatorMapped = false;
-        private string ifAssignment = null;
-        private string elseAssignment = null;
         private int recurse = 0;
         private int indentLevel = 0;
         private List<string> varsDeclared = new List<string>();
@@ -1277,6 +1315,8 @@ namespace WealthLab.Backtest
         private List<string> prevComments = new List<string>();
         private bool ifStatement = false;
         private int dynamicVarCount = 1;
+        private bool ifAssignment = false;
+        private string ifVarName = null;
     }
 
     //current processing line mode
