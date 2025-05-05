@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Net.Http.Headers;
+using System.Text;
 using WealthLab.Core;
 
 namespace WealthLab.Backtest
@@ -113,6 +114,15 @@ namespace WealthLab.Backtest
                         {
                             varType = "Parameter";
                             ParameterType pt = ParameterType.Double;
+                            switch(tokens[2])
+                            {
+                                case "int":
+                                    pt = ParameterType.Int32;
+                                    break;
+                                case "source":
+                                    pt = ParameterType.PriceComponent;
+                                    break;
+                            }
                             if (tokens[2] == "int")
                                 pt = ParameterType.Int32;
                             CreateParameter(varName, pt, tokens);
@@ -226,7 +236,7 @@ namespace WealthLab.Backtest
                         string title = GetKeyValue("title", indTokens);
                         paneTag = title == null ? "NewPane" : title;
                     }
-                    break;
+                    continue;
                 }
                 else if (token == "plot")
                 {
@@ -675,11 +685,17 @@ namespace WealthLab.Backtest
                 }
                 else if (token == "and")
                 {
-                    outTokens.Add("&&");
+                    if (LineMode == LineMode.Series)
+                        outTokens.Add("&");
+                    else
+                        outTokens.Add("&&");
                 }
                 else if (token == "or")
                 {
-                    outTokens.Add("||");
+                    if (LineMode == LineMode.Series)
+                        outTokens.Add("|");
+                    else
+                        outTokens.Add("||");
                 }
                 else if (token == "not")
                 {
@@ -1130,9 +1146,21 @@ namespace WealthLab.Backtest
             p.Name = paramName;
             _parameters[paramName] = p;
 
+            //source parameters are not turned into parameters
+            if (pt == ParameterType.PriceComponent)
+            {
+                DeclareVar(paramName, "TimeSeries");
+                string tsType = tokens[4];
+                string tsVal = "bars.Close";
+                if (ohclv.Contains(tsType))
+                    tsVal = "bars." + tsType.ToProper();
+                string initLine = paramName + " = " + tsVal + ";";
+                AddToInitializeMethod(initLine);
+                return;
+            }
+
             //create declaration statement
-            string dec = "private Parameter " + paramName + ";";
-            AddToVarDecl(dec);
+            DeclareVar(paramName, "Parameter");
 
             //parse out parameters of the Pine Script input statement - first parameter after ( is the default value
             int idx = tokens.IndexOf("(");
