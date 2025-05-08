@@ -40,10 +40,12 @@ Use it to:
 
 ## 🔜 Roadmap
 
+- [ ] Support full set of indicators in ta library (WIP, about half complete)
 - [x] Add support for MACD and other tuple-based indicators
-- [ ] Handle strategy templates with risk/position sizing
-- [ ] Convert Inputs into Strategy Parameters
-- [ ] Translate plots
+- [ ] Support assignment of tuples directly to variable, then accessing tuple members later 
+- [ ] Position sizing
+- [x] Convert Inputs into Strategy Parameters
+- [x] Translate plots
 
 ---
 
