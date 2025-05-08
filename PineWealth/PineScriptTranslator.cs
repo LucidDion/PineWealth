@@ -5,7 +5,6 @@ using WealthLab.Core;
 namespace WealthLab.Backtest
 {
     //Translates Pine Script into a WL8 C# Strategy
-    //DKK combine N . N, N . and . N patterns into single tokens before processing
     public class PineScriptTranslator
     {
         //current line mode
@@ -122,8 +121,8 @@ namespace WealthLab.Backtest
                 if (nextToken == "=")
                 {
                     //assignment statement
-                    string varName = token;
-                    string varType = "double";
+                    varName = token;
+                    varType = "double";
                     LineMode = LineMode.Scalar;
                     tokens.RemoveAt(0);
                     tokens.RemoveAt(0);
@@ -140,12 +139,16 @@ namespace WealthLab.Backtest
 
                     //construct the assignment statement
                     string assignmentLine = varName + " = ";
-                    assignmentLine += ConvertTokens(tokens) + ";";
+                    string cvt = ConvertTokens(tokens);
                     DeclareVar(varName, varType);
-                    if (LineMode == LineMode.Scalar)
-                        AddToExecuteMethod(assignmentLine);
-                    else
-                        AddToInitializeMethod(assignmentLine);
+                    if (cvt.Trim() != "")
+                    {
+                        assignmentLine += cvt + ";";
+                        if (LineMode == LineMode.Scalar)
+                            AddToExecuteMethod(assignmentLine);
+                        else
+                            AddToInitializeMethod(assignmentLine);
+                    }
                 }
                 else if (line.Trim().StartsWith("//"))
                 {
@@ -428,11 +431,6 @@ namespace WealthLab.Backtest
             //our output tokens
             List<string> outTokens = new List<string>();
 
-            //process tokens
-            string varName = "";
-            string varType = "var";
-            indicatorMapped = false;
-
             //process each token
             for (int i = 0; i < tokens.Count; i++)
             {
@@ -512,6 +510,7 @@ namespace WealthLab.Backtest
                         indParams = ExtractParameterTokens(argTokens, true);
                         switch(indName)
                         {
+                            //single value (non-tuple) indicators
                             case "alma":
                                 AddToUsing("WealthLab.AdvancedSmoothers");
                                 timeSeriesString = GenerateInlineIndicator("ALMA", 0, 1, 3, 2, "0");
@@ -592,13 +591,46 @@ namespace WealthLab.Backtest
                                 AddToUsing("WealthLab.AdvancedSmoothers");
                                 timeSeriesString = GenerateInlineIndicator("HMA", 0, 1);
                                 break;
+                            //tuple indicators that are pushed into a List<TimeSeries>
+                            case "bb":
+                                InjectTupleComponent(varName, "BBUpper", 0, 1, 2);
+                                InjectTupleComponent(varName, "SMA", 0, 1);
+                                InjectTupleComponent(varName, "BBLower", 0, 1, 2);
+                                break;
+                            case "dc":
+                                InjectTupleComponent(varName, "Highest", 0, 2);
+                                InjectTupleComponent(varName, "Lowest", 1, 2);
+                                break;
+                            case "ichimoku":
+                                AddToUsing("WealthLab.IchimokuCloud");
+                                InjectIndicator(varName, "TenkanSen", "bars", 2);
+                                InjectIndicator(varName, "KijunSen", "bars", 3);
+                                InjectIndicator(varName, "SenkouSpanA", "bars", 2, 3, 5);
+                                InjectIndicator(varName, "SenkouSpanB", "bars", 2, 3, 5);
+                                InjectIndicator(varName, "ChikouSpan", "bars", 4);
+                                break;
+                            case "kc":
+                                InjectIndicator(varName, "KeltnerUpper", "bars", 1, 2);
+                                InjectIndicator(varName, "EMA", 0, 1);
+                                InjectIndicator(varName, "KeltnerLower", "bars", 1, 2);
+                                break;
+                            case "macd":
+                                InjectTupleComponent(varName, "MACD", 0, 1, 2);
+                                InjectTupleComponent(varName, "EMA", "tempTimeSeries", 3);
+                                InjectTupleComponent(varName, "MACDHist", 0, 1, 2, 3);
+                                break;
+                            case "dmi":
+                                InjectTupleComponent(varName, "DIPlus", "bars", 0);
+                                InjectTupleComponent(varName, "DIMinus", "bars", 0);
+                                InjectTupleComponent(varName, "ADX", "bars", 1);
+                                break;
                         }
                     }
 
                     //restore LineMode
                     LineMode = ls;
 
-                    //inject generated time indictor definition
+                    //inject TS definition
                     if (ifStatement)
                     {
                         //define a new TimeSeries variable for this indicator, and use variable name here instead of indicator definition
@@ -660,7 +692,7 @@ namespace WealthLab.Backtest
                     else
                         outTokens.Add(token);
                 }
-                else if (timeSeriesVars.Contains(token) && recurse == 0 && !indicatorMapped && LineMode != LineMode.Series)
+                else if (timeSeriesVars.Contains(token) && recurse == 0 && LineMode != LineMode.Series)
                 {
                     outTokens.Add(token + "[idx]");
                 }
@@ -693,12 +725,6 @@ namespace WealthLab.Backtest
                 string execOut = "";
                 foreach (string ot in outTokens)
                     execOut += ot + " ";
-                if (indicatorMapped && execOut.Contains("="))
-                    AddToInitializeMethod(execOut.Trim());
-
-                //did we declare a variable?
-                if (varName != "")
-                    DeclareVar(varName, varType);
 
                 //return output
                 return execOut;
@@ -1025,8 +1051,15 @@ namespace WealthLab.Backtest
             DeclareVar(varName, indName);
 
             //create it in initialize
+            string indCreate = ComposeIndicatorCreate(varName, indName, arguments);
+            AddToInitializeMethod(indCreate);
+        }
+
+        //create indicator definition string from arguments
+        private string ComposeIndicatorCreate(string varName, string indName, params object[] arguments)
+        {
             string indCreate = varName + " = " + indName + ".Series(";
-            for(int n = 0; n  < arguments.Length; n++)
+            for (int n = 0; n < arguments.Length; n++)
             {
                 object obj = arguments[n];
                 if (obj is string)
@@ -1041,6 +1074,15 @@ namespace WealthLab.Backtest
                     indCreate = indCreate.TrimEnd() + ", ";
             }
             indCreate += ");";
+            return indCreate;
+        }
+
+        //add a tuple indicator component to the List<TimeSeries>
+        private void InjectTupleComponent(string varName, string indName, params object[] agruments)
+        {
+            string indCreate = ComposeIndicatorCreate("tempTimeSeries", indName, agruments);
+            AddToInitializeMethod(indCreate);
+            indCreate = varName + ".Add(tempTimeSeries);";
             AddToInitializeMethod(indCreate);
         }
 
@@ -1116,7 +1158,7 @@ namespace WealthLab.Backtest
             //DKK parse start/stop/step
 
             //get title
-            string paramTitle = paramName;
+            string paramTitle = null;
             idx = tokens.IndexOf("title");
             if (idx > 0)
             {
@@ -1124,6 +1166,19 @@ namespace WealthLab.Backtest
                 if (idx < tokens.Count)
                     paramTitle = tokens[idx];
             }
+            if (paramTitle == null)
+            {
+                foreach(string token in tokens)
+                {
+                    if (token.StartsWith("\""))
+                    {
+                        paramTitle = token;
+                        break;
+                    }
+                }
+            }
+            if (paramTitle == null)
+                paramTitle = paramName;
 
             //creating constructor statement
             string cons = paramName + " = AddParameter(" + paramTitle + ", ParameterType." + pt + ", " + defaultVal + ");";
@@ -1221,10 +1276,25 @@ namespace WealthLab.Backtest
                     varType = "string";
                 else if (tokens.Contains("ta."))
                 {
-                    varType = "TimeSeries";
+                    //look for tuple indicators 
+                    string ind = GetTokenAfter(tokens, "ta.");
+                    if (_tupleIndicators.Contains(ind))
+                    {
+                        varType = "List<TimeSeries>";
+                        _tuplesDefined.Add(varName);
+                        string createList = varName + " = new List<TimeSeries>();";
+                        AddToInitializeMethod(createList);
+                    }
+                    else
+                        varType = "TimeSeries";
                     LineMode = LineMode.Series;
                 }
                 else if (tokens.Intersect(ohclv).Any())
+                {
+                    varType = "TimeSeries";
+                    LineMode = LineMode.Series;
+                }
+                else if (tokens.Intersect(_tuplesDefined).Any())
                 {
                     varType = "TimeSeries";
                     LineMode = LineMode.Series;
@@ -1290,8 +1360,18 @@ namespace WealthLab.Backtest
             return varType;
         }
 
+        //get the token immediately after a predecessor
+        private string GetTokenAfter(List<string> tokens, string token)
+        {
+            int idx = tokens.IndexOf(token);
+            if (idx == -1 || idx == tokens.Count - 1)
+                return null;
+            return tokens[idx + 1];
+        }
+
         //variables
-        private bool indicatorMapped = false;
+        private string varName = "";
+        private string varType = "var";
         private int recurse = 0;
         private int indentLevel = 0;
         private List<string> varsDeclared = new List<string>();
@@ -1311,12 +1391,14 @@ namespace WealthLab.Backtest
         private Dictionary<string, Parameter> _parameters = new Dictionary<string, Parameter>();
         private static List<string> taIndicators = new List<string>() { "ema", "sma", "rsi", "macd", "stoch", "atr", "adx", "adxdi", "dmi", "wma", "vwma", "hma", "cmo", "mom", "roc",
             "stdev", "variance", "highest", "lowest", "rma", "crossover", "crossunder" };
+        private static List<string> _tupleIndicators = new List<string>() { "bb", "dc", "ichomoku", "kc", "macd", "dmi" };
         private string paneTag = "Price";
         private List<string> prevComments = new List<string>();
         private bool ifStatement = false;
         private int dynamicVarCount = 1;
         private bool ifAssignment = false;
         private string ifVarName = null;
+        private List<string> _tuplesDefined = new List<string>();
     }
 
     //current processing line mode

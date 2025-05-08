@@ -29,6 +29,7 @@ namespace WealthScript1
       }
        
       //declare private variables below
+      private TimeSeries tempTimeSeries;
 <#VarDecl>
    }
 }
