@@ -78,7 +78,6 @@ namespace WealthLab.Backtest
                 }
 
                 //further pre-processing
-                line = line.Replace(":=", "=");
                 line = line.Replace("input(", "input.int(");
                 if (line.StartsWith("var "))
                     line = line.Substring(4).Trim();
@@ -122,7 +121,18 @@ namespace WealthLab.Backtest
                 }
 
                 //process
-                if (nextToken == "=")
+                if (nextToken == ":" && nextNextToken == "=")
+                {
+                    //re-assignment statement
+                    varName = token;
+                    LineMode = LineMode.Scalar;
+                    tokens.RemoveAt(0);
+                    tokens.RemoveAt(0);
+                    tokens.RemoveAt(0);
+                    string reAssignmentStatement = varName + " = " + ConvertTokens(tokens) + ";";
+                    AddToExecuteMethod(reAssignmentStatement);
+                }
+                else if (nextToken == "=")
                 {
                     //assignment statement
                     varName = token;
@@ -160,6 +170,10 @@ namespace WealthLab.Backtest
                     prevComments.Add(line);
                 }
                 else if (token == "strategy" && nextToken == "(")
+                {
+                    //NOP
+                }
+                else if (token == "strategy" && nextNextToken == "cancel")
                 {
                     //NOP
                 }
@@ -266,6 +280,13 @@ namespace WealthLab.Backtest
 
                     //parens?
                     if (nextToken != "(")
+                    {
+                        tokens.Insert(1, "(");
+                        tokens.Add(")");
+                    }
+
+                    //if multiple compares, surround them all in parens
+                    if (tokens.Contains("and") || tokens.Contains("or"))
                     {
                         tokens.Insert(1, "(");
                         tokens.Add(")");
@@ -489,9 +510,6 @@ namespace WealthLab.Backtest
                 //ta. indicator declaration?
                 else if (token == "ta.")
                 {
-                    LineMode ls = LineMode;
-                    LineMode = LineMode.Series;
-
                     //map a ta lib indicator to a WL indicator, and advance the token counter to the next token that needs to be processed
                     i++;
                     string indName = tokens[i];
@@ -514,7 +532,7 @@ namespace WealthLab.Backtest
                     {
                         //DKK customized mappings
                         indParams = ExtractParameterTokens(argTokens, true);
-                        switch(indName)
+                        switch (indName)
                         {
                             //single value (non-tuple) indicators
                             case "alma":
@@ -633,8 +651,9 @@ namespace WealthLab.Backtest
                         }
                     }
 
-                    //restore LineMode
-                    LineMode = ls;
+                    //scalar mode?
+                    if (LineMode == LineMode.Scalar)
+                        timeSeriesString += "[idx]";
 
                     //inject TS definition
                     idxSeriesDefined = outTokens.Count;
@@ -731,9 +750,9 @@ namespace WealthLab.Backtest
                     }
                 }
                 else if (token == "year" && LineMode == LineMode.Scalar)
-                {
                     outTokens.Add("bars.DateTimes[idx].Year");
-                }
+                else if (token == "round" && LineMode == LineMode.Scalar)
+                    outTokens.Add("Math.Round");
                 //output it as is
                 else
                 {
@@ -1128,6 +1147,8 @@ namespace WealthLab.Backtest
                     indOut += ", ";
             }
             indOut += ")";
+            if (LineMode == LineMode.Scalar)
+                indOut += "[idx]";
             return indOut;
         }
 
