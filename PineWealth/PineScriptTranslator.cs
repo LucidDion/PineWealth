@@ -261,7 +261,6 @@ namespace WealthLab.Backtest
                 else if (token == "strategy" && nextToken == "." && nextNextToken == "entry")
                 {
                     //strategy entry
-                    //DKK map order name to a position tag
                     List<List<string>> stratTokens = ExtractParameterTokens(tokens);
                     string sigName = stratTokens[0][0];
                     sigName = sigName.Replace("\"", "");
@@ -277,26 +276,8 @@ namespace WealthLab.Backtest
                         }
                     _posTypes[sigName] = isLong ? PositionType.Long : PositionType.Short;
                     string tt = isLong ? "Buy" : "Short";
-                    string limPrice = GetKeyValue("limit", stratTokens);
-                    string stopPrice = GetKeyValue("stop", stratTokens);
-                    string qty = GetKeyValue("qty", stratTokens);
-                    string orderType = "Market";
-                    string orderPrice = "0.0";
-                    if (limPrice != null && stopPrice != null)
-                    {
-                        orderType = "StopLimit";
-                        orderPrice = stopPrice;
-                    }
-                    else if (limPrice != null)
-                    {
-                        orderType = "Limit";
-                        orderPrice = limPrice;
-                    }
-                    else if (stopPrice != null)
-                    {
-                        orderType = "Stop";
-                        orderPrice= stopPrice;
-                    }
+                    string limPrice = "", stopPrice = "", qty = "", orderType = "", orderPrice = "";
+                    ParseTransactionTokens(stratTokens, ref limPrice, ref stopPrice, ref qty, ref orderType, ref orderPrice);
                     string pt = "Transaction _t = PlaceTrade(bars, TransactionType." + tt + ", OrderType." + orderType + ", " + orderPrice + ", " + posTag + ", \"" + sigName + "\");";
 
                     //add the code to close opposing order
@@ -321,6 +302,18 @@ namespace WealthLab.Backtest
                 else if (token == "strategy" && nextToken == "." && nextNextToken == "close")
                 {
                     //strategy close
+                    List<List<string>> stratTokens = ExtractParameterTokens(tokens);
+                    string sigName = stratTokens[0][0];
+                    sigName = sigName.Replace("\"", "");
+                    if (!_posTags.ContainsKey(sigName))
+                        _posTags[sigName] = _posTagCounter++;
+                    int posTag = _posTags[sigName];
+                    bool isLong = !_posTypes.ContainsKey(sigName) || _posTypes[sigName] == PositionType.Long;
+                    string tt = isLong ? "Sell" : "Cover";
+                    string limPrice = "", stopPrice = "", qty = "", orderType = "", orderPrice = "";
+                    ParseTransactionTokens(stratTokens, ref limPrice, ref stopPrice, ref qty, ref orderType, ref orderPrice);
+                    string pt = "Transaction _t = PlaceTrade(bars, TransactionType." + tt + ", OrderType." + orderType + ", " + orderPrice + ", " + posTag + ", \"" + sigName + "\");";
+                    AddToExecuteMethod(pt);
                 }
                 else if (token == "if")
                 {
@@ -1463,6 +1456,31 @@ namespace WealthLab.Backtest
         private void PopLineMode()
         {
             _lineModeStack.Pop();
+        }
+
+        //parse order variables from tokens
+        private void ParseTransactionTokens(List<List<string>> stratTokens, ref string limPrice, ref string stopPrice, ref string qty, ref string orderType, ref string orderPrice)
+        {
+            limPrice = GetKeyValue("limit", stratTokens);
+            stopPrice = GetKeyValue("stop", stratTokens);
+            qty = GetKeyValue("qty", stratTokens);
+            orderType = "Market";
+            orderPrice = "0.0";
+            if (limPrice != null && stopPrice != null)
+            {
+                orderType = "StopLimit";
+                orderPrice = stopPrice;
+            }
+            else if (limPrice != null)
+            {
+                orderType = "Limit";
+                orderPrice = limPrice;
+            }
+            else if (stopPrice != null)
+            {
+                orderType = "Stop";
+                orderPrice = stopPrice;
+            }
         }
 
         //variables
