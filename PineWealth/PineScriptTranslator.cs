@@ -8,7 +8,18 @@ namespace WealthLab.Backtest
     public class PineScriptTranslator
     {
         //current line mode
-        public LineMode LineMode { get; set; }
+        public LineMode LineMode
+        {
+            get
+            {
+                return _lineModeStack.Peek();
+            }
+            set
+            {
+                _lineModeStack.Clear();
+                PushLineMode(value);
+            }
+        }
 
         //perform the translation
         public string Translate(string pineScriptSource, string boilerPlate)
@@ -197,7 +208,6 @@ namespace WealthLab.Backtest
                     List<List<string>> plotTokens = ExtractParameterTokens(tokens);
 
                     //first parameter is series/value to plot - see if it's a numeric value
-                    recurse++;
                     string arg1 = ConvertTokens(plotTokens[0]);
 
                     //pluck other arguments that we support
@@ -205,7 +215,6 @@ namespace WealthLab.Backtest
                     string argTitle = GetKeyValue("title", plotTokens);
                     string argLineWidth = GetKeyValue("linewidth", plotTokens);
                     string argStyle = GetKeyValue("style", plotTokens);
-                    recurse--;
 
                     if (IsNumeric(arg1))
                     {
@@ -251,11 +260,39 @@ namespace WealthLab.Backtest
                 else if (token == "strategy" && nextToken == "." && nextNextToken == "entry")
                 {
                     //strategy entry
-                    string sigName = tokens[4];
+                    //DKK map order name to a position tag
+                    List<List<string>> stratTokens = ExtractParameterTokens(tokens);
+                    string sigName = stratTokens[0][0];
                     sigName = sigName.Replace("\"", "");
-                    bool isLong = tokens[8] == "long";
+                    bool isLong = true;
+                    foreach(List<string> lst in stratTokens)
+                        if (lst[0] == "strategy")
+                        {
+                            isLong = lst[2] != "short";
+                            break;
+                        }
                     string tt = isLong ? "Buy" : "Short";
-                    string pt = "PlaceTrade(bars, TransactionType." + tt + ", OrderType.Market, 0, \"" + sigName + "\");";
+                    string limPrice = GetKeyValue("limit", stratTokens);
+                    string stopPrice = GetKeyValue("stop", stratTokens);
+                    string qty = GetKeyValue("qty", stratTokens);
+                    string orderType = "Market";
+                    string orderPrice = "0.0";
+                    if (limPrice != null && stopPrice != null)
+                    {
+                        orderType = "StopLimit";
+                        orderPrice = stopPrice;
+                    }
+                    else if (limPrice != null)
+                    {
+                        orderType = "Limit";
+                        orderPrice = limPrice;
+                    }
+                    else if (stopPrice != null)
+                    {
+                        orderType = "Stop";
+                        orderPrice= stopPrice;
+                    }
+                    string pt = "Transaction _t = PlaceTrade(bars, TransactionType." + tt + ", OrderType." + orderType + ", " + orderPrice + ", \"" + sigName + "\");";
 
                     //add the code to close opposing order
                     if (isLong)
@@ -271,6 +308,14 @@ namespace WealthLab.Backtest
 
                     //add entry trade
                     AddToExecuteMethod(pt);
+
+                    //quantity?
+                    if (qty != null)
+                        AddToExecuteMethod("_t.Quantity = " + qty + ";");
+                }
+                else if (token == "strategy" && nextToken == "." && nextNextToken == "close")
+                {
+                    //strategy close
                 }
                 else if (token == "if")
                 {
@@ -331,7 +376,6 @@ namespace WealthLab.Backtest
                         List<string> tokensAfter = GetTokensAfter("=", tokens);
                         if (tokensAfter[0] == "ta.")
                         {
-                            recurse++;
                             indParams = ExtractParameterTokens(tokensAfter);
                             switch (tokensAfter[1])
                             {
@@ -399,7 +443,6 @@ namespace WealthLab.Backtest
                                     }
                                     break;
                             }
-                            recurse--;
                         }
                     }
                     else
@@ -487,11 +530,9 @@ namespace WealthLab.Backtest
                         {
                             //new color -> MakeTransparent
                             List<List<string>> colorNewParams = ExtractParameterTokens(tokens);
-                            recurse++;
                             string colorNewArg1 = ConvertTokens(colorNewParams[0]);
                             colorNewArg1 = colorNewArg1.Replace("WLColor ", "");
                             string colorNewArg2 = ConvertTokens(colorNewParams[1]);
-                            recurse--;
                             outTokens.Add(colorNewArg1.Trim() + ".MakeTransparent((byte)(" + colorNewArg2 + " * 2.55))");
                             RemoveTokensUpTo(tokens, ")", i, true);
                         }
@@ -511,6 +552,7 @@ namespace WealthLab.Backtest
                 else if (token == "ta.")
                 {
                     //map a ta lib indicator to a WL indicator, and advance the token counter to the next token that needs to be processed
+                    PushLineMode(LineMode.Series);
                     i++;
                     string indName = tokens[i];
                     i++;
@@ -652,6 +694,7 @@ namespace WealthLab.Backtest
                     }
 
                     //scalar mode?
+                    PopLineMode();
                     if (LineMode == LineMode.Scalar)
                         timeSeriesString += "[idx]";
 
@@ -718,13 +761,9 @@ namespace WealthLab.Backtest
                     else
                         outTokens.Add(token);
                 }
-                else if (timeSeriesVars.Contains(token) && recurse == 0 && LineMode != LineMode.Series)
+                else if (timeSeriesVars.Contains(token) && LineMode != LineMode.Series)
                 {
                     idxSeriesDefined = outTokens.Count;
-                    outTokens.Add(token + "[idx]");
-                }
-                else if (timeSeriesVars.Contains(token) && LineMode == LineMode.Scalar)
-                {
                     outTokens.Add(token + "[idx]");
                 }
                 //strategy parameter?
@@ -1382,9 +1421,7 @@ namespace WealthLab.Backtest
 
                             //process remainder of tokens and put in initialize
                             DeclareVar(varName, varType);
-                            recurse++;
                             string statement = varName + " = " + ConvertTokens(tokensAfter) + " ;";
-                            recurse--;
                             AddToInitializeMethod(statement);
                             return varType;
                         }
@@ -1413,10 +1450,19 @@ namespace WealthLab.Backtest
             return tokens[idx + 1];
         }
 
+        //push/pop line mode
+        private void PushLineMode(LineMode lm)
+        {
+            _lineModeStack.Push(lm);
+        }
+        private void PopLineMode()
+        {
+            _lineModeStack.Pop();
+        }
+
         //variables
         private string varName = "";
         private string varType = "var";
-        private int recurse = 0;
         private int indentLevel = 0;
         private List<string> varsDeclared = new List<string>();
         private Dictionary<string, string> varTypes = new Dictionary<string, string>();
@@ -1444,6 +1490,7 @@ namespace WealthLab.Backtest
         private string ifVarName = null;
         private List<string> _tuplesDefined = new List<string>();
         private int idxSeriesDefined;
+        private Stack<LineMode> _lineModeStack = new Stack<LineMode>();
     }
 
     //current processing line mode
