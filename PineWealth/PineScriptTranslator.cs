@@ -78,6 +78,7 @@ namespace WealthLab.Backtest
                 }
 
                 //handle default input type
+                line = line.Replace(":=", "=");
                 line = line.Replace("input(", "input.int(");
 
                 //see if the current indent level has decreased, if so we need to add a closing brace
@@ -198,8 +199,10 @@ namespace WealthLab.Backtest
                         //use PlotTimeSeries for series plots (this will handle indicators and TimeSeries)
                         if (argTitle == null)
                             argTitle = arg1;
+                        if (!argTitle.StartsWith("\""))
+                            argTitle = "\"" + argTitle + "\"";
                         if (argColor == null)
-                            argColor = "Blue";
+                            argColor = "WLColor.Blue"; //DKK randomize color
                         string plotLine = "PlotTimeSeries(" + arg1 + ", " + argTitle + ", \"" + paneTag + "\", " + argColor + ");";
                         AddToInitializeMethod(plotLine);
                     }
@@ -631,6 +634,7 @@ namespace WealthLab.Backtest
                     LineMode = ls;
 
                     //inject TS definition
+                    idxSeriesDefined = outTokens.Count;
                     if (ifStatement)
                     {
                         //define a new TimeSeries variable for this indicator, and use variable name here instead of indicator definition
@@ -694,6 +698,7 @@ namespace WealthLab.Backtest
                 }
                 else if (timeSeriesVars.Contains(token) && recurse == 0 && LineMode != LineMode.Series)
                 {
+                    idxSeriesDefined = outTokens.Count;
                     outTokens.Add(token + "[idx]");
                 }
                 else if (timeSeriesVars.Contains(token) && LineMode == LineMode.Scalar)
@@ -710,6 +715,17 @@ namespace WealthLab.Backtest
                     else
                         paramOut += "AsDouble";
                     outTokens.Add(paramOut);
+                }
+                else if (token == "[" && LineMode == LineMode.Series)
+                {
+                    i++;
+                    string shiftNum = tokens[i];
+                    i++; // closing ]
+                    if (shiftNum != "0")
+                    {
+                        outTokens.Insert(idxSeriesDefined, "(");
+                        outTokens.Add(">> " + shiftNum + ")");
+                    }
                 }
                 //output it as is
                 else
@@ -1399,6 +1415,7 @@ namespace WealthLab.Backtest
         private bool ifAssignment = false;
         private string ifVarName = null;
         private List<string> _tuplesDefined = new List<string>();
+        private int idxSeriesDefined;
     }
 
     //current processing line mode
