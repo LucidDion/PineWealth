@@ -1,4 +1,5 @@
-﻿using System.Net.Http.Headers;
+﻿using System.Globalization;
+using System.Net.Http.Headers;
 using System.Text;
 using WealthLab.Core;
 
@@ -264,6 +265,9 @@ namespace WealthLab.Backtest
                     List<List<string>> stratTokens = ExtractParameterTokens(tokens);
                     string sigName = stratTokens[0][0];
                     sigName = sigName.Replace("\"", "");
+                    if (!_posTags.ContainsKey(sigName))
+                        _posTags[sigName] = _posTagCounter++;
+                    int posTag = _posTags[sigName];
                     bool isLong = true;
                     foreach(List<string> lst in stratTokens)
                         if (lst[0] == "strategy")
@@ -271,6 +275,7 @@ namespace WealthLab.Backtest
                             isLong = lst[2] != "short";
                             break;
                         }
+                    _posTypes[sigName] = isLong ? PositionType.Long : PositionType.Short;
                     string tt = isLong ? "Buy" : "Short";
                     string limPrice = GetKeyValue("limit", stratTokens);
                     string stopPrice = GetKeyValue("stop", stratTokens);
@@ -292,7 +297,7 @@ namespace WealthLab.Backtest
                         orderType = "Stop";
                         orderPrice= stopPrice;
                     }
-                    string pt = "Transaction _t = PlaceTrade(bars, TransactionType." + tt + ", OrderType." + orderType + ", " + orderPrice + ", \"" + sigName + "\");";
+                    string pt = "Transaction _t = PlaceTrade(bars, TransactionType." + tt + ", OrderType." + orderType + ", " + orderPrice + ", " + posTag + ", \"" + sigName + "\");";
 
                     //add the code to close opposing order
                     if (isLong)
@@ -1491,6 +1496,9 @@ namespace WealthLab.Backtest
         private List<string> _tuplesDefined = new List<string>();
         private int idxSeriesDefined;
         private Stack<LineMode> _lineModeStack = new Stack<LineMode>();
+        private Dictionary<string, int> _posTags = new Dictionary<string, int>();
+        private Dictionary<string, PositionType> _posTypes = new Dictionary<string, PositionType>();
+        private int _posTagCounter = 1;
     }
 
     //current processing line mode
