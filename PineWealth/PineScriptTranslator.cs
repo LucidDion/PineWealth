@@ -77,9 +77,12 @@ namespace WealthLab.Backtest
                     line = line.Replace(oldStyle, newStyle);
                 }
 
-                //handle default input type
+                //further pre-processing
                 line = line.Replace(":=", "=");
                 line = line.Replace("input(", "input.int(");
+                if (line.StartsWith("var "))
+                    line = line.Substring(4).Trim();
+                line = line.Replace("strategy.position_size", "OpenQuantity");
 
                 //see if the current indent level has decreased, if so we need to add a closing brace
                 while(indentCount < indentLevel)
@@ -726,6 +729,10 @@ namespace WealthLab.Backtest
                         outTokens.Insert(idxSeriesDefined, "(");
                         outTokens.Add(">> " + shiftNum + ")");
                     }
+                }
+                else if (token == "year" && LineMode == LineMode.Scalar)
+                {
+                    outTokens.Add("bars.DateTimes[idx].Year");
                 }
                 //output it as is
                 else
