@@ -64,43 +64,23 @@ namespace PineWealth.Properties {
         ///   Looks up a localized string similar to //@version=4
         ///strategy(&quot;RSI Overbought/Oversold&quot;, overlay=true)
         ///
+        ///x = 20
         ///rsi = ta.rsi(close, 14)
+        ///diff = close - open
+        ///diffInd = ta.rsi(close, 14) - ta.rsi(close, 4)
+        ///[middle, upper, lower] = ta.bb(close, 20, 20)
         ///
         ///if (rsi &gt; 70)
         ///    strategy.entry(&quot;Short&quot;, strategy.short)
+        ///    x++
         ///
         ///if (rsi &lt; 30)
-        ///    strategy.entry(&quot;Long&quot;, strategy.long).
+        ///    strategy.entry(&quot;Long&quot;, strategy.long)
+        ///    x--.
         /// </summary>
         internal static string PineScript {
             get {
                 return ResourceManager.GetString("PineScript", resourceCulture);
-            }
-        }
-        
-        /// <summary>
-        ///   Looks up a localized string similar to using WealthLab.Backtest;
-        ///using System;
-        ///using WealthLab.Core;
-        ///using WealthLab.Data;
-        ///using WealthLab.Indicators;
-        ///using System.Collections.Generic;
-        ///
-        ///namespace WealthScript1 
-        ///{
-        ///    public class MyStrategy : UserStrategyBase
-        ///    {
-        ///        //create indicators and other objects here, this is executed prior to the main trading loop
-        ///        public override void Initialize(BarHistory bars)
-        ///        {
-        ///            &lt;#Initialize&gt;
-        ///        }
-        ///
-        ///        //execute the strategy rules here, this is executed once [rest of string was truncated]&quot;;.
-        /// </summary>
-        internal static string PineScriptCSharp {
-            get {
-                return ResourceManager.GetString("PineScriptCSharp", resourceCulture);
             }
         }
     }

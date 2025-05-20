@@ -30,7 +30,7 @@ namespace PineWealth
             PineScriptTranslator pst = new PineScriptTranslator();
             try
             {
-                txtCSharp.Text = pst.Translate(txtPineScript.Text, Properties.Resources.PineScriptCSharp);
+                txtCSharp.Text = pst.Translate(txtPineScript.Text);
                 txtStatus.AppendText("Translation succeeded." + Environment.NewLine);
 
                 //attempt to compile the strategy code

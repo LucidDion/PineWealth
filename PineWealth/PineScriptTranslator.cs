@@ -1,6 +1,4 @@
-﻿using System.Globalization;
-using System.Net.Http.Headers;
-using System.Text;
+﻿using System.Text;
 using WealthLab.Core;
 
 namespace WealthLab.Backtest
@@ -22,9 +20,15 @@ namespace WealthLab.Backtest
             }
         }
 
+        //access boilerplate code
+        public string BoilerPlate => _boilerPlate;
+
         //perform the translation
-        public string Translate(string pineScriptSource, string boilerPlate)
+        public string Translate(string pineScriptSource)
         {
+            //boilerplate
+            string boilerPlate = BoilerPlate;
+
             //remove returns
             pineScriptSource = pineScriptSource.Replace("\r", "");
 
@@ -79,7 +83,7 @@ namespace WealthLab.Backtest
                     continue;
 
                 //version 3 does not use ta. library, prepend ta.
-                foreach(string taInd in taIndicators)
+                foreach (string taInd in taIndicators)
                 {
                     string oldStyle = " " + taInd + "(";
                     string newStyle = " ta." + taInd + "(";
@@ -96,7 +100,7 @@ namespace WealthLab.Backtest
                 line = line.Replace("strategy.position_size", "OpenQuantity");
 
                 //see if the current indent level has decreased, if so we need to add a closing brace
-                while(indentCount < indentLevel)
+                while (indentCount < indentLevel)
                 {
                     indentLevel--;
                     AddToExecuteMethod("}");
@@ -268,7 +272,7 @@ namespace WealthLab.Backtest
                         _posTags[sigName] = _posTagCounter++;
                     int posTag = _posTags[sigName];
                     bool isLong = true;
-                    foreach(List<string> lst in stratTokens)
+                    foreach (List<string> lst in stratTokens)
                         if (lst[0] == "strategy")
                         {
                             isLong = lst[2] != "short";
@@ -460,14 +464,14 @@ namespace WealthLab.Backtest
             }
 
             //final closing braces
-            while(indentLevel > 0)
+            while (indentLevel > 0)
             {
                 indentLevel--;
                 AddToExecuteMethod("}");
             }
 
             //add variable declarations
-            foreach(KeyValuePair<string, string> kvp in varTypes)
+            foreach (KeyValuePair<string, string> kvp in varTypes)
             {
                 string line = "private " + kvp.Value + " " + kvp.Key + ";";
                 AddToVarDecl(line);
@@ -852,7 +856,7 @@ namespace WealthLab.Backtest
         private List<string> CombineLibTokens(List<string> tokens)
         {
             List<string> outTokens = new List<string>();
-            for(int n = 0; n < tokens.Count; n++)
+            for (int n = 0; n < tokens.Count; n++)
             {
                 if (tokens[n] == "ta" && n < tokens.Count - 1 && tokens[n + 1] == ".")
                 {
@@ -1086,7 +1090,7 @@ namespace WealthLab.Backtest
             //start processing tokens
             int parenCount = 0;
             List<string> currentArg = new List<string>();
-            for(int n = 0; n < arguments.Count; n++)
+            for (int n = 0; n < arguments.Count; n++)
             {
                 if (parenCount == 0 && arguments[n] == ",")
                 {
@@ -1169,7 +1173,7 @@ namespace WealthLab.Backtest
         private string GenerateInlineIndicator(string indName, params object[] arguments)
         {
             string indOut = indName + ".Series(";
-            for(int n = 0; n < arguments.Length; n++)
+            for (int n = 0; n < arguments.Length; n++)
             {
                 object obj = arguments[n];
                 if (obj is string)
@@ -1233,7 +1237,7 @@ namespace WealthLab.Backtest
             string defaultVal = tokens[idx];
             if (defaultVal == "true")
                 defaultVal = "1";
-            if (defaultVal == "false") 
+            if (defaultVal == "false")
                 defaultVal = "0";
 
             //DKK parse start/stop/step
@@ -1249,7 +1253,7 @@ namespace WealthLab.Backtest
             }
             if (paramTitle == null)
             {
-                foreach(string token in tokens)
+                foreach (string token in tokens)
                 {
                     if (token.StartsWith("\""))
                     {
@@ -1269,7 +1273,7 @@ namespace WealthLab.Backtest
         //given a list of List<tokens>, return the value portion of the specified key
         private string GetKeyValue(string key, List<List<string>> tokenLists)
         {
-            foreach(List<string> list in tokenLists)
+            foreach (List<string> list in tokenLists)
             {
                 if (list.Count > 1 && list[0] == key && list[1] == "=")
                 {
@@ -1285,7 +1289,7 @@ namespace WealthLab.Backtest
         //remove tokens up to the specified end token
         private void RemoveTokensUpTo(List<string> tokens, string endToken, int startIdx, bool inclusive)
         {
-            for(int n = startIdx; n < tokens.Count; n++)
+            for (int n = startIdx; n < tokens.Count; n++)
             {
                 if (tokens[n] == endToken)
                 {
@@ -1306,7 +1310,7 @@ namespace WealthLab.Backtest
         {
             int parens = 0;
             List<string> argTokens = new List<string>();
-            while(idx < tokens.Count)
+            while (idx < tokens.Count)
             {
                 string token = tokens[idx];
                 tokens.RemoveAt(idx);
@@ -1517,6 +1521,45 @@ namespace WealthLab.Backtest
         private Dictionary<string, int> _posTags = new Dictionary<string, int>();
         private Dictionary<string, PositionType> _posTypes = new Dictionary<string, PositionType>();
         private int _posTagCounter = 1;
+
+        //boilerplate code
+        private string _boilerPlate =
+            @"
+using WealthLab.Backtest;
+using System;
+using WealthLab.Core;
+using WealthLab.Data;
+using WealthLab.Indicators;
+using System.Collections.Generic;
+<#Using>
+
+namespace WealthScript1
+{
+   public class MyStrategy : UserStrategyBase
+   {
+      //constructor
+      public MyStrategy() : base()
+      {
+<#Constructor>
+      }
+
+      //create indicators and other objects here, this is executed prior to the main trading loop
+      public override void Initialize(BarHistory bars)
+      {
+<#Initialize>
+      }
+
+      //execute the strategy rules here, this is executed once for each bar in the backtest history
+      public override void Execute(BarHistory bars, int idx)
+      {
+<#Execute>
+      }
+
+      //declare private variables below
+      private TimeSeries tempTimeSeries;
+<#VarDecl>
+   }
+}";
     }
 
     //current processing line mode
