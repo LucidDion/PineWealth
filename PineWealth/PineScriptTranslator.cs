@@ -233,7 +233,7 @@ namespace WealthLab.Backtest
                         if (!argTitle.StartsWith("\""))
                             argTitle = "\"" + argTitle + "\"";
                         if (argColor == null)
-                            argColor = "WLColor.Blue"; //DKK randomize color
+                            argColor = "_rndColor.NextColor"; 
                         string plotLine = "PlotTimeSeries(" + arg1 + ", " + argTitle + ", \"" + paneTag + "\", " + argColor + ");";
                         AddToInitializeMethod(plotLine);
                     }
@@ -684,7 +684,7 @@ namespace WealthLab.Backtest
                                 break;
                             case "macd":
                                 InjectTupleComponent(varName, "MACD", 0, 1, 2);
-                                InjectTupleComponent(varName, "EMA", "tempTimeSeries", 3);
+                                InjectTupleComponent(varName, "EMA", "_tempTimeSeries", 3);
                                 InjectTupleComponent(varName, "MACDHist", 0, 1, 2, 3);
                                 break;
                             case "dmi":
@@ -1163,9 +1163,9 @@ namespace WealthLab.Backtest
         //add a tuple indicator component to the List<TimeSeries>
         private void InjectTupleComponent(string varName, string indName, params object[] agruments)
         {
-            string indCreate = ComposeIndicatorCreate("tempTimeSeries", indName, agruments);
+            string indCreate = ComposeIndicatorCreate("_tempTimeSeries", indName, agruments);
             AddToInitializeMethod(indCreate);
-            indCreate = varName + ".Add(tempTimeSeries);";
+            indCreate = varName + ".Add(_tempTimeSeries);";
             AddToInitializeMethod(indCreate);
         }
 
@@ -1556,7 +1556,8 @@ namespace WealthScript1
       }
 
       //declare private variables below
-      private TimeSeries tempTimeSeries;
+      private TimeSeries _tempTimeSeries;
+      private RandomColorGenerator _rndColor = new RandomColorGenerator();
 <#VarDecl>
    }
 }";
