@@ -1504,7 +1504,8 @@ namespace WealthLab.Backtest
         private static List<string> logicalOps = new List<string>() { ">", "<", ">=", "<=" };
         List<List<string>> indParams;
         private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" }, { "barssince", "BarsSince" },
-            { "bbw", "BBWidth" }, { "cci", "CCI" }, { "cmo", "CMO" }, { "cog", "CG" }, { "correlation", "Corr" }, { "dev", "MeanAbsDev" }, { "max", "ATHigh" }, { "median", "Median" } };
+            { "bbw", "BBWidth" }, { "cci", "CCI" }, { "cmo", "CMO" }, { "cog", "CG" }, { "correlation", "Corr" }, { "dev", "MeanAbsDev" }, { "max", "ATHigh" }, { "median", "Median" },
+            { "mfi", "MFI" } };
         private Dictionary<string, Parameter> _parameters = new Dictionary<string, Parameter>();
         private static List<string> taIndicators = new List<string>() { "ema", "sma", "rsi", "macd", "stoch", "atr", "adx", "adxdi", "dmi", "wma", "vwma", "hma", "cmo", "mom", "roc",
             "stdev", "variance", "highest", "lowest", "rma", "crossover", "crossunder" };
