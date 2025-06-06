@@ -232,6 +232,7 @@ namespace WealthLab.Backtest
                             argTitle = arg1;
                         if (!argTitle.StartsWith("\""))
                             argTitle = "\"" + argTitle + "\"";
+                        argTitle = argTitle.Replace(".Series(", "(");
                         if (argColor == null)
                             argColor = "_rndColor.NextColor"; 
                         string plotLine = "PlotTimeSeries(" + arg1 + ", " + argTitle + ", \"" + paneTag + "\", " + argColor + ");";
@@ -585,6 +586,9 @@ namespace WealthLab.Backtest
                                 break;
                             case "atr":
                                 timeSeriesString = GenerateInlineIndicator("ATR", "bars", 0);
+                                break;
+                            case "sar":
+                                timeSeriesString = GenerateInlineIndicator("PSAR", "bars", 1, 2);
                                 break;
                             case "crossover":
                                 {
@@ -1505,7 +1509,7 @@ namespace WealthLab.Backtest
         List<List<string>> indParams;
         private static Dictionary<string, string> pvIndicators = new Dictionary<string, string>() { { "ema", "EMA" }, { "rsi", "RSI" }, { "sma", "SMA" }, { "barssince", "BarsSince" },
             { "bbw", "BBWidth" }, { "cci", "CCI" }, { "cmo", "CMO" }, { "cog", "CG" }, { "correlation", "Corr" }, { "dev", "MeanAbsDev" }, { "max", "ATHigh" }, { "median", "Median" },
-            { "mfi", "MFI" }, { "min", "ATLow" }, { "mode", "Mode" }, { "mom", "Momentum" } };
+            { "mfi", "MFI" }, { "min", "ATLow" }, { "mode", "Mode" }, { "mom", "Momentum" }, { "roc", "ROC" } };
         private Dictionary<string, Parameter> _parameters = new Dictionary<string, Parameter>();
         private static List<string> taIndicators = new List<string>() { "ema", "sma", "rsi", "macd", "stoch", "atr", "adx", "adxdi", "dmi", "wma", "vwma", "hma", "cmo", "mom", "roc",
             "stdev", "variance", "highest", "lowest", "rma", "crossover", "crossunder" };
